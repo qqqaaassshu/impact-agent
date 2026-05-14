@@ -3,3 +3,9 @@ __pycache__/
 .venv/
 .pytest_cache/
 .DS_Store
+node_modules/
+dist/
+web/node_modules/
+web/dist/
+data/knowledge/assessments/
+*.zip

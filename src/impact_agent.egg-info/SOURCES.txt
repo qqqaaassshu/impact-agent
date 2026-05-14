@@ -20,15 +20,19 @@ src/impact_agent/adapters/framework/vue.py
 src/impact_agent/models/__init__.py
 src/impact_agent/models/common.py
 src/impact_agent/models/evidence.py
+src/impact_agent/models/history.py
+src/impact_agent/models/llm.py
 src/impact_agent/models/report.py
 src/impact_agent/models/request.py
 src/impact_agent/models/state.py
+src/impact_agent/models/web.py
 src/impact_agent/orchestrator/__init__.py
 src/impact_agent/orchestrator/runner.py
 src/impact_agent/policies/__init__.py
 src/impact_agent/policies/confidence.py
 src/impact_agent/policies/risk.py
 src/impact_agent/services/__init__.py
+src/impact_agent/services/assessment_service.py
 src/impact_agent/services/classifier.py
 src/impact_agent/services/intake.py
 src/impact_agent/services/knowledge_store.py
@@ -39,3 +43,5 @@ src/impact_agent/strategies/base.py
 src/impact_agent/strategies/feature_change.py
 src/impact_agent/strategies/field_rename.py
 src/impact_agent/tools/__init__.py
+src/impact_agent/web/__init__.py
+src/impact_agent/web/app.py

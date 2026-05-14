@@ -15,10 +15,13 @@ def test_local_search_finds_matches() -> None:
     assert any(item["relative_path"] == "src/order.ts" for item in result["results"])
 
 
-def test_local_snapshot_reports_non_git_directory() -> None:
+def test_local_snapshot_reports_directory_metadata() -> None:
     adapter = LocalCodeSourceAdapter(str(FIXTURE_ROOT))
 
     snapshot = adapter.snapshot()
 
     assert snapshot["type"] == "local"
-    assert snapshot["git"]["is_repo"] is False
+    assert snapshot["root_path"] == str(FIXTURE_ROOT.resolve())
+    assert "is_repo" in snapshot["git"]
+    assert "commit" in snapshot["git"]
+    assert "has_uncommitted_changes" in snapshot["git"]

@@ -12,6 +12,8 @@ class Summary(BaseModel):
     conclusion: str
     stop_reason: str | None = None
     source_snapshot: dict = Field(default_factory=dict)
+    assessment_id: str | None = None
+    created_at: str | None = None
 
 
 class AssessmentReport(BaseModel):
@@ -23,4 +25,4 @@ class AssessmentReport(BaseModel):
     evidence_chain: dict = Field(default_factory=dict)
     knowledge_used: dict = Field(default_factory=dict)
     next_action: str | None = None
-    trace: list[str] = Field(default_factory=list)
+    trace: list[dict] = Field(default_factory=list)

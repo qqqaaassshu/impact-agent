@@ -33,16 +33,12 @@
 - `ChangeStrategy`
   - 面向不同变更类型的分析策略
   - 当前包含 `field_rename` 和 `feature_change`
-
 - `CodeSourceAdapter`
   - 统一本地代码源和 GitLab 代码源
-
 - `FrameworkAnalyzer`
   - 统一 Vue 和 React 的模板 / JSX / 事件绑定 / 字段使用分析
-
 - `RiskPolicy` / `ConfidencePolicy`
   - 风险和置信度规则
-
 - `EvidenceModel`
   - 统一证据链输出结构
 
@@ -53,6 +49,7 @@ impact-agent/
 ├── CLAUDE.md
 ├── README.md
 ├── pyproject.toml
+├── .env.example
 ├── src/
 │   └── impact_agent/
 │       ├── cli.py
@@ -66,6 +63,13 @@ impact-agent/
 │       ├── services/
 │       ├── policies/
 │       └── tools/
+├── web/
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.vue
+│       ├── api/
+│       └── types/
 ├── tests/
 │   ├── unit/
 │   ├── integration/
@@ -74,104 +78,36 @@ impact-agent/
     └── knowledge/
 ```
 
-## 各目录职责
-
-### `src/impact_agent/models`
-
-定义输入、状态、报告、证据等核心数据模型。
-
-### `src/impact_agent/orchestrator`
-
-负责主流程编排，不承担具体业务匹配逻辑。
-
-### `src/impact_agent/strategies`
-
-定义不同变更类型的分析策略。
-
-### `src/impact_agent/adapters/code_source`
-
-定义代码从哪里读取：
-
-- 本地目录
-- GitLab 仓库
-
-### `src/impact_agent/adapters/framework`
-
-定义前端框架适配：
-
-- Vue
-- React
-
-### `src/impact_agent/services`
-
-承载过程性服务，例如：
-
-- intake
-- relation tracking
-- report building
-- knowledge store
-
-### `src/impact_agent/policies`
-
-承载风险和置信度规则。
-
-### `tests/fixtures`
-
-放置 Vue / React 示例工程，用于验证字段变更和功能变更场景。
-
 ## 当前开发状态
 
-当前已经完成：
+当前已经完成的 MVP / agent slice：
 
-- 项目基础目录结构
-- 中文 `CLAUDE.md`
-- 核心抽象骨架
-- 模型骨架
-- adapter / strategy / service / policy 占位模块
+- 本地代码源 `local` 读取、搜索、快照采集
+- `field_rename` 主链路
+- `AssessmentRequest` / `AssessmentState` / `AssessmentReport` 模型
+- LangGraph 主流程编排
+- LLM 驱动的 intake 解析
+- LLM 驱动的 clue 扩展
+- LLM 驱动的搜索是否继续决策
+- 风险、置信度、证据链、结构化 JSON 报告输出
+- FastAPI Web API
+- Vue 3 + Vite 可视化界面
+- 本地文件持久化的分析历史记录
+- 基于 mocked LLM 的单元测试
 
-当前尚未完成：
+当前仍未完成 / MVP 限制：
 
-- CLI 实现
-- intake 标准化逻辑
-- 本地代码源实现
-- GitLab 代码源实现
-- Vue / React analyzer 实现
-- field_rename / feature_change 策略实现
-- 风险与置信度策略实现
-- 证据链组装实现
+- `feature_change` 主链路暂未实现；当前 runner 会明确拒绝非 `field_rename` 请求
+- GitLab 代码源
+- Vue / React 专项 analyzer 深化
+- 更强的关系追踪与 AST 能力
+- 真实 provider 集成测试
 
-## 推荐开发顺序
+后续扩展 `feature_change` 时，建议新增独立 `FeatureChangeStrategy` 实现入口搜索、事件 handler、API 调用和刷新链路分析，再在 runner 中按 `change_type` 选择不同 strategy。
 
-建议按以下顺序推进：
-
-1. 完善 `models/request.py` 和 `models/report.py`
-2. 实现 `services/intake.py`
-3. 实现 `adapters/code_source/local.py`
-4. 实现 `strategies/field_rename.py`
-5. 实现 `services/report_builder.py`
-6. 增加首批单元测试
-7. 再实现 `feature_change` 主链路
-8. 再补 Vue / React analyzer
-9. 最后接入 GitLab adapter 和 knowledge store
-
-## 如何使用
-
-### 当前阶段
-
-当前项目还处于骨架阶段，CLI 和主流程尚未实现，因此暂时不能直接执行完整分析命令。
-
-当前可以做的事情：
-
-1. 阅读工程结构和 `CLAUDE.md`
-2. 在 `src/impact_agent/` 下继续实现模块
-3. 在 `tests/fixtures/` 下准备 Vue / React 示例工程
-4. 使用 `pytest` 跑基础测试
-
-### 本地开发环境准备
+## 本地开发环境准备
 
 建议使用 Python 3.11 及以上版本。
-
-示例步骤：
 
 ```bash
 cd /Users/huchunming/Documents/工作/agents/impact-agent
@@ -179,40 +115,51 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e .
-```
-
-如果后续补充了测试依赖，再额外安装：
-
-```bash
 pip install pytest
 ```
 
-### 运行测试
-
-当前可以运行占位测试确认工程结构正常：
+如果要跑真实 LLM 链路，再准备环境变量：
 
 ```bash
-pytest
+cp .env.example .env
+export LLM_MODEL=anthropic:claude-sonnet-4-20250514
+export ANTHROPIC_API_KEY=your_key_here
 ```
 
-### 未来目标用法
-
-后续 CLI 完成后，预期会支持两类使用方式。
-
-#### 方式一：结构化输入
+国内 OpenAI-compatible provider 可统一使用 `LLM_API_KEY`：
 
 ```bash
-python -m impact_agent.cli --input request.json
+export LLM_MODEL=deepseek:deepseek-chat
+export LLM_API_KEY=your_key_here
 ```
 
-其中 `request.json` 示例：
+如果希望 Web 或纯文本 intake 不让用户填写本地项目路径，可以提前配置默认项目：
+
+```bash
+export REPO_ROOT_PATH=/path/to/project
+export REPO_PATH=src
+```
+
+也可以改成你自己的 provider，例如 OpenAI、通义千问、DeepSeek、Kimi 或 Ollama。
+
+## 如何使用
+
+### 方式一：结构化 JSON 输入
+
+当前可直接使用：
+
+```bash
+.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_request.json
+```
+
+`tests/fixtures/local_field_rename_request.json` 示例：
 
 ```json
 {
   "source": {
     "type": "local",
-    "root_path": "/path/to/project",
-    "include_uncommitted": true
+    "root_path": "tests/fixtures/local_field_rename_project",
+    "include_uncommitted": false
   },
   "repo_path": "src",
   "requirement": "将订单金额字段从 amount 改为 totalAmount",
@@ -223,25 +170,131 @@ python -m impact_agent.cli --input request.json
     "new_name": "totalAmount",
     "entity_kind": "api_field"
   },
-  "file_types": [".ts", ".tsx", ".js", ".jsx", ".vue", ".json"]
+  "file_types": [".ts"]
 }
 ```
 
-#### 方式二：命令行参数直传
+### 方式二：纯文本需求文件输入
+
+当前 CLI 也支持把纯文本文件交给 intake：
 
 ```bash
-python -m impact_agent.cli \
-  --source-type local \
-  --root-path /path/to/project \
-  --change-type feature_change \
-  --module order \
-  --action delete \
-  --target-entity order
+.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_prompt.txt
 ```
 
-### 预期输出
+`tests/fixtures/local_field_rename_prompt.txt` 示例：
 
-系统最终应输出结构化 JSON，至少包含：
+```text
+请帮我评估这个字段改名会影响哪里
+需求：把订单金额字段从 amount 改成 totalAmount
+```
+
+注意：纯文本输入会走 LLM intake，因此必须先配置 `LLM_MODEL` 和对应 provider 的 API Key。
+
+如果文本里缺少必要信息，CLI 会输出：
+
+```json
+{
+  "needs_clarification": true,
+  "questions": ["..."]
+}
+```
+
+## 测试步骤
+
+### 1. 运行全部单元测试
+
+这一步不依赖真实 LLM provider，测试里已经 mock 掉了 `get_llm()`：
+
+```bash
+.venv/bin/python -m pytest tests/unit
+```
+
+当前覆盖包括：
+
+- intake 自然语言解析与 clarification 分支
+- `field_rename` 的 clue 合并与规则分类
+- runner 的 conditional routing 与最大轮次收敛
+- CLI 的 clarification 输出与成功输出
+- Web API 的提交、追问、历史列表、历史详情
+- 本地代码源搜索与快照结构
+
+### 2. 只验证本轮新增 Web 测试
+
+```bash
+.venv/bin/python -m pytest tests/unit/test_assessment_service.py
+.venv/bin/python -m pytest tests/unit/test_web_app.py
+```
+
+### 3. 运行 Vue 3 前端构建
+
+```bash
+npm --prefix web install
+npm --prefix web run build
+```
+
+### 4. 运行 CLI JSON 冒烟
+
+这一步会走真实 agent 主链路，因此需要先配置 `LLM_MODEL`：
+
+```bash
+.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_request.json
+```
+
+预期结果：
+
+- 输出结构化 JSON
+- `summary.change_type` 为 `field_rename`
+- 包含 `confirmed_affected`
+- 包含 `coverage.search_round`
+- 包含 `trace`
+
+### 5. 运行 CLI 纯文本冒烟
+
+```bash
+.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_prompt.txt
+```
+
+预期结果分两种：
+
+- 信息足够：输出结构化分析报告
+- 信息不足：输出 `ClarificationNeeded` JSON
+
+### 6. 启动 Web 可视化界面
+
+后端：
+
+```bash
+.venv/bin/python -m uvicorn impact_agent.web.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+前端：
+
+```bash
+npm --prefix web run dev
+```
+
+然后在浏览器打开 Vite 输出的本地地址。前端默认会把 `/api` 请求代理到 `http://127.0.0.1:8000`。
+
+### 7. Web 端手工验证路径
+
+1. 打开页面后，左侧应显示历史记录列表或空态。
+2. 表单默认只需要填写需求描述；项目路径默认由后端 `REPO_ROOT_PATH` / `REPO_PATH` 配置读取。
+3. 点击“开始分析”。
+4. 如果已配置真实 `LLM_MODEL`，应看到结构化报告。
+5. 如果信息不足或 LLM 判断需要补充，应看到追问列表。
+6. 分析完成后，左侧历史记录应刷新。
+7. 点击历史记录，应恢复对应报告详情。
+
+### 8. 当前测试限制
+
+- 未配置 `LLM_MODEL` 时，CLI 冒烟和 Web 真实提交无法执行完整分析
+- 当前单元测试已经覆盖 Web API 分支，但真实 provider 联调仍需单独验证
+- `feature_change`、GitLab、深度框架分析暂未纳入当前测试范围
+
+## 预期输出
+
+系统当前输出结构化 JSON，核心字段包括：
 
 - `summary`
 - `confirmed_affected`
@@ -249,19 +302,19 @@ python -m impact_agent.cli \
 - `uncertain_matches`
 - `coverage`
 - `evidence_chain`
-- `risk_level`
-- `overall_confidence`
+- `knowledge_used`
+- `next_action`
+- `trace`
 
-### 当前限制说明
+## 当前限制说明
 
 在当前版本中：
 
-- CLI 尚未实现
-- 本地 / GitLab adapter 尚未实现
-- Vue / React analyzer 尚未实现
-- field_rename / feature_change 主链路尚未实现
-
-因此 README 中的执行方式属于目标使用方式，不代表现在已经全部可用。
+- 只有 `field_rename` 主链路可用
+- 只有本地代码源 `local` 可用
+- 搜索结果分类以规则兜底，并对动态引用增加 LLM 语义二次判断
+- 真实 LLM 集成测试尚未沉淀到 `tests/integration/`
+- `feature_change`、GitLab、深度框架分析仍待补齐
 
 ## 开发约束
 
@@ -290,6 +343,6 @@ python -m impact_agent.cli \
 
 ## 说明
 
-本 README 主要用于说明工程结构、目标和开发入口。
+本 README 主要用于说明当前工程状态、使用方法和测试入口。
 
 如果需要更详细的实现设计，请参考单独的设计文档。

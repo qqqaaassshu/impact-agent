@@ -6,8 +6,8 @@
 
 当前基础能力范围：
 
-- 字段变更 `field_rename`
-- 功能变更 `feature_change`
+- 字段变更 `field_rename`：当前 MVP 已接通主链路
+- 功能变更 `feature_change`：当前是规划中的基础能力，主链路尚未实现
 
 当前必须支持：
 
@@ -79,7 +79,7 @@
 
 ### feature_change
 
-重点关注：
+当前 MVP 暂未实现 `feature_change` 主链路。后续实现时重点关注：
 
 - 页面入口
 - 动作按钮或操作列
