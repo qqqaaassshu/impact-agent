@@ -1,0 +1,19 @@
+[project]
+name = "impact-agent"
+version = "0.1.0"
+description = "需求变更影响范围评估 Agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "langchain>=0.3.0",
+  "langgraph>=0.2.0",
+  "pydantic>=2.8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

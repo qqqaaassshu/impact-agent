@@ -1,0 +1,295 @@
+# impact-agent
+
+一个面向前端代码仓库的“需求变更影响范围评估 Agent”工程。
+
+## 项目目标
+
+本项目用于分析一条需求变更在前端代码中的影响范围，并输出结构化、可审计的分析结果。
+
+当前基础支持两类变更：
+
+- `field_rename`：字段变更
+- `feature_change`：功能变更
+
+系统目标不是开放式聊天，而是：
+
+- 基于真实代码事实做分析
+- 对确认受影响、确认排除、不确定项做清晰区分
+- 输出带证据链的结构化报告
+- 支持 Vue / React 项目
+- 支持本地代码源 / GitLab 代码源
+
+## 当前设计原则
+
+- 只读分析，不修改被分析仓库代码
+- 不确定场景显式输出，不把猜测当结论
+- 主流程、框架适配、代码源适配、变更策略分层清晰
+- 优先保证架构稳定和可扩展性，再逐步提高精度
+
+## 架构概览
+
+核心抽象包括：
+
+- `ChangeStrategy`
+  - 面向不同变更类型的分析策略
+  - 当前包含 `field_rename` 和 `feature_change`
+
+- `CodeSourceAdapter`
+  - 统一本地代码源和 GitLab 代码源
+
+- `FrameworkAnalyzer`
+  - 统一 Vue 和 React 的模板 / JSX / 事件绑定 / 字段使用分析
+
+- `RiskPolicy` / `ConfidencePolicy`
+  - 风险和置信度规则
+
+- `EvidenceModel`
+  - 统一证据链输出结构
+
+## 目录结构
+
+```text
+impact-agent/
+├── CLAUDE.md
+├── README.md
+├── pyproject.toml
+├── src/
+│   └── impact_agent/
+│       ├── cli.py
+│       ├── config.py
+│       ├── models/
+│       ├── orchestrator/
+│       ├── strategies/
+│       ├── adapters/
+│       │   ├── code_source/
+│       │   └── framework/
+│       ├── services/
+│       ├── policies/
+│       └── tools/
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── fixtures/
+└── data/
+    └── knowledge/
+```
+
+## 各目录职责
+
+### `src/impact_agent/models`
+
+定义输入、状态、报告、证据等核心数据模型。
+
+### `src/impact_agent/orchestrator`
+
+负责主流程编排，不承担具体业务匹配逻辑。
+
+### `src/impact_agent/strategies`
+
+定义不同变更类型的分析策略。
+
+### `src/impact_agent/adapters/code_source`
+
+定义代码从哪里读取：
+
+- 本地目录
+- GitLab 仓库
+
+### `src/impact_agent/adapters/framework`
+
+定义前端框架适配：
+
+- Vue
+- React
+
+### `src/impact_agent/services`
+
+承载过程性服务，例如：
+
+- intake
+- relation tracking
+- report building
+- knowledge store
+
+### `src/impact_agent/policies`
+
+承载风险和置信度规则。
+
+### `tests/fixtures`
+
+放置 Vue / React 示例工程，用于验证字段变更和功能变更场景。
+
+## 当前开发状态
+
+当前已经完成：
+
+- 项目基础目录结构
+- 中文 `CLAUDE.md`
+- 核心抽象骨架
+- 模型骨架
+- adapter / strategy / service / policy 占位模块
+
+当前尚未完成：
+
+- CLI 实现
+- intake 标准化逻辑
+- 本地代码源实现
+- GitLab 代码源实现
+- Vue / React analyzer 实现
+- field_rename / feature_change 策略实现
+- 风险与置信度策略实现
+- 证据链组装实现
+
+## 推荐开发顺序
+
+建议按以下顺序推进：
+
+1. 完善 `models/request.py` 和 `models/report.py`
+2. 实现 `services/intake.py`
+3. 实现 `adapters/code_source/local.py`
+4. 实现 `strategies/field_rename.py`
+5. 实现 `services/report_builder.py`
+6. 增加首批单元测试
+7. 再实现 `feature_change` 主链路
+8. 再补 Vue / React analyzer
+9. 最后接入 GitLab adapter 和 knowledge store
+
+## 如何使用
+
+### 当前阶段
+
+当前项目还处于骨架阶段，CLI 和主流程尚未实现，因此暂时不能直接执行完整分析命令。
+
+当前可以做的事情：
+
+1. 阅读工程结构和 `CLAUDE.md`
+2. 在 `src/impact_agent/` 下继续实现模块
+3. 在 `tests/fixtures/` 下准备 Vue / React 示例工程
+4. 使用 `pytest` 跑基础测试
+
+### 本地开发环境准备
+
+建议使用 Python 3.11 及以上版本。
+
+示例步骤：
+
+```bash
+cd /Users/huchunming/Documents/工作/agents/impact-agent
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .
+```
+
+如果后续补充了测试依赖，再额外安装：
+
+```bash
+pip install pytest
+```
+
+### 运行测试
+
+当前可以运行占位测试确认工程结构正常：
+
+```bash
+pytest
+```
+
+### 未来目标用法
+
+后续 CLI 完成后，预期会支持两类使用方式。
+
+#### 方式一：结构化输入
+
+```bash
+python -m impact_agent.cli --input request.json
+```
+
+其中 `request.json` 示例：
+
+```json
+{
+  "source": {
+    "type": "local",
+    "root_path": "/path/to/project",
+    "include_uncommitted": true
+  },
+  "repo_path": "src",
+  "requirement": "将订单金额字段从 amount 改为 totalAmount",
+  "change_type": "field_rename",
+  "change_scope": {
+    "module": "order",
+    "old_name": "amount",
+    "new_name": "totalAmount",
+    "entity_kind": "api_field"
+  },
+  "file_types": [".ts", ".tsx", ".js", ".jsx", ".vue", ".json"]
+}
+```
+
+#### 方式二：命令行参数直传
+
+```bash
+python -m impact_agent.cli \
+  --source-type local \
+  --root-path /path/to/project \
+  --change-type feature_change \
+  --module order \
+  --action delete \
+  --target-entity order
+```
+
+### 预期输出
+
+系统最终应输出结构化 JSON，至少包含：
+
+- `summary`
+- `confirmed_affected`
+- `excluded_matches`
+- `uncertain_matches`
+- `coverage`
+- `evidence_chain`
+- `risk_level`
+- `overall_confidence`
+
+### 当前限制说明
+
+在当前版本中：
+
+- CLI 尚未实现
+- 本地 / GitLab adapter 尚未实现
+- Vue / React analyzer 尚未实现
+- field_rename / feature_change 主链路尚未实现
+
+因此 README 中的执行方式属于目标使用方式，不代表现在已经全部可用。
+
+## 开发约束
+
+更详细的长期开发约束见：
+
+- `CLAUDE.md`
+
+其中包括：
+
+- 模块边界
+- 变更类型规则
+- 框架支持规则
+- 代码源规则
+- 输出规则
+- 测试要求
+
+## 后续扩展方向
+
+后续可扩展：
+
+- 更多变更类型
+- 更多代码源
+- 更高精度 AST 分析
+- 更完整的调用链与权限链分析
+- 更成熟的项目知识库
+
+## 说明
+
+本 README 主要用于说明工程结构、目标和开发入口。
+
+如果需要更详细的实现设计，请参考单独的设计文档。
