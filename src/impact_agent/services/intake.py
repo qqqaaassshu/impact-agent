@@ -103,12 +103,16 @@ def _parse_with_llm(
             "repo_path": result.repo_path or DEFAULT_REPO_PATH or None,
         "requirement": result.requirement or requirement,
         "change_type": result.change_type or "field_rename",
-        "change_scope": {
-            "module": result.module,
-            "old_name": result.old_name,
-            "new_name": result.new_name,
-            "entity_kind": result.entity_kind or "api_field",
-        },
+            "change_scope": {
+                "module": result.module,
+                "old_name": result.old_name,
+                "new_name": result.new_name,
+                "include_new_name_references": _should_include_new_name_references(
+                    result.requirement or requirement,
+                    raw_input.get("include_new_name_references", False) if isinstance(raw_input, dict) else False,
+                ),
+                "entity_kind": result.entity_kind or "api_field",
+            },
     }
 
     if not payload["source"]["root_path"]:
@@ -128,11 +132,16 @@ def _parse_field_rename_locally(raw_input: dict[str, Any] | str) -> AssessmentRe
         root_path = raw_input.get("source", {}).get("root_path") or raw_input.get("root_path") or DEFAULT_ROOT_PATH
         repo_path = raw_input.get("repo_path") or DEFAULT_REPO_PATH or None
         file_types = raw_input.get("file_types")
+        include_new_name_references = _should_include_new_name_references(
+            requirement,
+            raw_input.get("include_new_name_references", False),
+        )
     else:
         requirement = raw_input
         root_path = DEFAULT_ROOT_PATH
         repo_path = DEFAULT_REPO_PATH or None
         file_types = None
+        include_new_name_references = _should_include_new_name_references(requirement)
 
     parsed = _extract_field_rename(requirement)
     if not parsed:
@@ -150,6 +159,7 @@ def _parse_field_rename_locally(raw_input: dict[str, Any] | str) -> AssessmentRe
             "change_scope": {
                 "old_name": old_name,
                 "new_name": new_name,
+                "include_new_name_references": include_new_name_references,
                 "entity_kind": "api_field",
             },
             "file_types": file_types or [],
@@ -179,6 +189,28 @@ def _reject_unsupported_source(request: AssessmentRequest) -> UnsupportedRequest
             reason=f"当前版本只支持本地代码源，暂不支持“{request.source.type}”代码源",
         )
     return None
+
+
+def _should_include_new_name_references(requirement: str, explicit_value: Any = False) -> bool:
+    if explicit_value:
+        return True
+    normalized = requirement.lower()
+    triggers = [
+        "已迁移",
+        "新名称",
+        "新字段",
+        "新名字",
+        "迁移完成",
+        "是否已有",
+        "是否存在",
+        "检查迁移",
+        "检查新",
+        "already migrated",
+        "new name",
+        "new field",
+        "migration",
+    ]
+    return any(trigger in normalized for trigger in triggers)
 
 
 def _display_change_type(change_type: str) -> str:

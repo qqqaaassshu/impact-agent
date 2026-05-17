@@ -22,15 +22,22 @@ from impact_agent.strategies.field_rename import FieldRenameStrategy
 
 
 class AssessmentRunner:
-    def __init__(self, progress_callback: Callable[[dict[str, Any]], None] | None = None) -> None:
+    def __init__(
+        self,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        entrypoint: str = "api",
+    ) -> None:
         self.progress_callback = progress_callback
+        self.entrypoint = entrypoint
         self.graph = self._build_graph()
 
     def run(self, request: AssessmentRequest) -> AssessmentReport:
         state = AssessmentState(request=request.model_dump(), max_search_rounds=MAX_SEARCH_ROUNDS)
         final_state = self.graph.invoke(state.model_dump())
         report = final_state["report"]
-        append_assessment_summary(report, request.model_dump())
+        request_payload = request.model_dump()
+        request_payload["entrypoint"] = self.entrypoint
+        append_assessment_summary(report, request_payload)
         return report
 
     def _build_graph(self):
@@ -140,6 +147,17 @@ class AssessmentRunner:
         clues = state.get("searched_clues", [])
         clues_by_keyword = {clue["keyword"]: clue for clue in clues}
         search_result = adapter.search_many([clue["keyword"] for clue in clues], request.file_types, request.repo_path)
+        state["trace"] = [
+            *state.get("trace", []),
+            {
+                "node": "skill_act",
+                "skill": "frontend-impact-search",
+                "action": "local_search_many",
+                "keywords": search_result.get("keywords", []),
+                "search_engine": search_result.get("search_engine"),
+                "scanned_files": search_result.get("scanned_files", 0),
+            },
+        ]
 
         for keyword, candidates in search_result.get("results_by_keyword", {}).items():
             clue = clues_by_keyword.get(keyword)
@@ -248,6 +266,7 @@ class AssessmentRunner:
                 "uncertain_count": len(uncertain),
                 "excluded_count": len(excluded),
                 "derived_relation_count": len(relations),
+                "ast_analyzed_files": strategy.ast_analyzed_file_count,
             },
         ]
         return state

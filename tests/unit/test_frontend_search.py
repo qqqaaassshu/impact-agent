@@ -60,3 +60,23 @@ def test_search_local_candidates_many_groups_results_by_keyword(tmp_path) -> Non
     assert result["search_engine"] in {"rg", "python"}
     assert len(result["results_by_keyword"]["amount"]) == 2
     assert len(result["results_by_keyword"]["totalAmount"]) == 1
+
+
+def test_search_local_candidates_does_not_match_keyword_inside_longer_identifier(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    source_root = project_root / "src"
+    source_root.mkdir(parents=True)
+
+    (source_root / "market.js").write_text(
+        "Eui.Messager.showToastMsg({ msg: 'ok' })\n",
+        encoding="utf-8",
+    )
+
+    result = search_local_candidates(
+        root_path=str(project_root),
+        keyword="toastMsg",
+        file_types=[".js"],
+        repo_path="src",
+    )
+
+    assert result["results"] == []

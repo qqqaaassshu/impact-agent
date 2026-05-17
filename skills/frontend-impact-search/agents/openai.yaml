@@ -1,4 +1,4 @@
 interface:
   display_name: "Frontend Impact Search"
-  short_description: "Search Vue/React repos for impact evidence"
-  default_prompt: "Use $frontend-impact-search to scan a local frontend repository for field rename evidence."
+  short_description: "Deterministically search Vue/React repos for field rename evidence"
+  default_prompt: "Use $frontend-impact-search to scan a local frontend repository for field rename impact evidence, then return normalized candidates for the Agent to classify."

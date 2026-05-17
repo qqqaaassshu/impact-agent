@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(D:\\\\Wrok\\\\agents\\\\impact-agent\\\\.venv\\\\Scripts\\\\python.exe *)",
-      "PowerShell(.venv\\\\Scripts\\\\python.exe -m pip install -e .)"
+      "PowerShell(.venv\\\\Scripts\\\\python.exe -m pip install -e .)",
+      "Bash(git restore *)",
+      "Bash(git commit *)",
+      "Bash(git config *)",
+      "Bash(gh auth *)",
+      "Bash(gh api *)",
+      "Bash(git add *)"
     ]
   }
 }

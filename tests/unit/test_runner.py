@@ -74,6 +74,12 @@ def test_runner_produces_three_way_report_and_finishes_when_candidates_exist(mon
     assert report.coverage["derived_relation_count"] >= 1
     assert any(item.get("reason") == "variable_propagation_reference" for item in report.uncertain)
     assert report.coverage["search_round"] == 1
+    assert any(
+        item.get("node") == "skill_act"
+        and item.get("skill") == "frontend-impact-search"
+        and item.get("action") == "local_search_many"
+        for item in report.trace
+    )
     assert any(item.get("node") == "decide_search_next_step" and item.get("action") == "finish" for item in report.trace)
     assert any(item.get("node") == "review_special_contexts" for item in report.trace)
 

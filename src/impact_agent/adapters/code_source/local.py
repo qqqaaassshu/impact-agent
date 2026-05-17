@@ -2,12 +2,13 @@ from pathlib import Path
 import subprocess
 
 from impact_agent.adapters.code_source.base import CodeSourceAdapter
-from impact_agent.services.frontend_search import search_local_candidates, search_local_candidates_many
+from impact_agent.services.frontend_impact_skill import FrontendImpactSearchSkill
 
 
 class LocalCodeSourceAdapter(CodeSourceAdapter):
     def __init__(self, root_path: str) -> None:
         self.root_path = Path(root_path).expanduser().resolve()
+        self.skill = FrontendImpactSearchSkill()
 
     def snapshot(self) -> dict:
         snapshot = {
@@ -39,20 +40,22 @@ class LocalCodeSourceAdapter(CodeSourceAdapter):
         return snapshot
 
     def search(self, keyword: str, file_types: list[str], repo_path: str | None = None) -> dict:
-        return search_local_candidates(
+        result = self.skill.local_search(
             root_path=str(self.root_path),
             keyword=keyword,
             file_types=file_types,
             repo_path=repo_path,
         )
+        return result["observation"]
 
     def search_many(self, keywords: list[str], file_types: list[str], repo_path: str | None = None) -> dict:
-        return search_local_candidates_many(
+        result = self.skill.local_search_many(
             root_path=str(self.root_path),
             keywords=keywords,
             file_types=file_types,
             repo_path=repo_path,
         )
+        return result["observation"]
 
     def read(self, file_path: str) -> dict:
         target = Path(file_path)

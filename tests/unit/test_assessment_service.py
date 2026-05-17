@@ -53,8 +53,9 @@ def test_submit_returns_report(monkeypatch) -> None:
     )
 
     class FakeRunner:
-        def __init__(self, progress_callback=None) -> None:
+        def __init__(self, progress_callback=None, entrypoint="api") -> None:
             self.progress_callback = progress_callback
+            self.entrypoint = entrypoint
 
         def run(self, normalized_request):
             assert normalized_request is request
@@ -92,8 +93,9 @@ def test_submit_emits_llm_intake_progress_only_when_llm_path_is_used(monkeypatch
     )
 
     class FakeRunner:
-        def __init__(self, progress_callback=None) -> None:
+        def __init__(self, progress_callback=None, entrypoint="api") -> None:
             self.progress_callback = progress_callback
+            self.entrypoint = entrypoint
 
         def run(self, normalized_request):
             return report
@@ -125,10 +127,17 @@ def test_history_methods_delegate(monkeypatch) -> None:
             conclusion="done",
         )
     ]
-    monkeypatch.setattr(assessment_service_module, "list_assessment_history", lambda limit=50: history_items)
+    captured = []
+    monkeypatch.setattr(
+        assessment_service_module,
+        "list_assessment_history",
+        lambda limit=50, entrypoint=None: captured.append(entrypoint) or history_items,
+    )
     monkeypatch.setattr(assessment_service_module, "get_assessment_record", lambda assessment_id: {"assessment_id": assessment_id})
 
     service = AssessmentService()
 
     assert service.list_history() == history_items
+    assert service.list_history(entrypoint="web") == history_items
+    assert captured == [None, "web"]
     assert service.get_history_detail("a-1") == {"assessment_id": "a-1"}

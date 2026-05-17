@@ -49,10 +49,78 @@ def test_generate_clues_merges_base_and_llm_variants(monkeypatch) -> None:
     clues = strategy.generate_clues(build_request(), {}, [])
 
     assert "amount" in [item["keyword"] for item in clues]
-    assert "totalAmount" in [item["keyword"] for item in clues]
+    assert "totalAmount" not in [item["keyword"] for item in clues]
     llm_clue = next(item for item in clues if item["keyword"] == "amount_value")
     assert llm_clue["clue_category"] == "llm_variant"
     assert llm_clue["source"] == "llm"
+
+
+def test_generate_clues_does_not_search_new_name_by_default() -> None:
+    strategy = FieldRenameStrategy()
+    clues = strategy.generate_clues(build_request(), {}, [])
+
+    keywords = {item["keyword"] for item in clues}
+
+    assert "amount" in keywords
+    assert "totalAmount" not in keywords
+
+
+def test_generate_clues_can_include_new_name_as_reference_when_enabled() -> None:
+    request = build_request()
+    request.change_scope.include_new_name_references = True
+
+    clues = FieldRenameStrategy().generate_clues(request, {}, [])
+
+    assert any(item["keyword"] == "totalAmount" and item["clue_category"] == "new_name" for item in clues)
+    assert any(
+        item["keyword"] == "total_amount" and item.get("variant_source") == "new_name"
+        for item in clues
+    )
+
+
+def test_classify_new_name_reference_is_excluded() -> None:
+    decision = FieldRenameStrategy().classify_match(
+        "src/order.ts",
+        "console.log(order.totalAmount)",
+        {"keyword": "totalAmount", "clue_category": "new_name"},
+        {"candidate": {"line": "console.log(order.totalAmount)", "line_no": 1}},
+    )
+
+    assert decision["status"] == "excluded"
+    assert decision["reason"] == "already_migrated_reference"
+
+
+def test_classify_new_name_variant_reference_is_excluded() -> None:
+    decision = FieldRenameStrategy().classify_match(
+        "src/order.ts",
+        'console.log(order["total_amount"])',
+        {"keyword": "total_amount", "clue_category": "deterministic_variant", "variant_source": "new_name"},
+        {"candidate": {"line": 'console.log(order["total_amount"])', "line_no": 1}},
+    )
+
+    assert decision["status"] == "excluded"
+    assert decision["reason"] == "already_migrated_reference"
+
+
+def test_generate_clues_filters_llm_new_name_when_not_requested(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_CLUE_EXPANSION", "true")
+    monkeypatch.setattr(
+        field_rename,
+        "get_llm",
+        lambda: FakeLLM(
+            ClueExpansionResult(
+                clues=["totalAmount", "total_amount", "amount_value"],
+                reasoning="include variants",
+            )
+        ),
+    )
+
+    clues = FieldRenameStrategy().generate_clues(build_request(), {}, [])
+    keywords = {item["keyword"] for item in clues}
+
+    assert "totalAmount" not in keywords
+    assert "total_amount" not in keywords
+    assert "amount_value" in keywords
 
 
 def test_classify_match_uses_llm_fallback_for_dynamic_reference(monkeypatch) -> None:
@@ -153,6 +221,69 @@ const Query = () => <TraderInput fieldName="amount" label="金额" />;
     assert decision["status"] == "confirmed_affected"
     assert decision["framework"] == "react"
     assert decision["usage_type"] == "config_field"
+
+
+def test_classify_match_uses_skill_ast_before_plain_static_reference(monkeypatch) -> None:
+    monkeypatch.setenv("AST_ANALYSIS_ENGINE", "python")
+    strategy = FieldRenameStrategy()
+    content = """
+interface Order {
+  amount?: number;
+}
+""".strip()
+
+    decision = strategy.classify_match(
+        "src/order.ts",
+        content,
+        {"keyword": "amount", "clue_category": "old_name"},
+        {"candidate": {"line": "amount?: number;", "line_no": 2}},
+    )
+
+    assert decision["status"] == "confirmed_affected"
+    assert decision["reason"] == "ast_type_field"
+    assert decision["analysis_engine"] == "python_structure"
+
+
+def test_collect_relations_uses_skill_ast_destructuring_alias(monkeypatch) -> None:
+    monkeypatch.setenv("AST_ANALYSIS_ENGINE", "python")
+    strategy = FieldRenameStrategy()
+    content = "\n".join(
+        [
+            "const { amount: orderAmount } = order;",
+            "return formatMoney(orderAmount);",
+        ]
+    )
+    candidate = {
+        "file_path": "src/order.ts",
+        "relative_path": "src/order.ts",
+        "line": "const { amount: orderAmount } = order;",
+        "line_no": 1,
+        "file_kind": "ts",
+    }
+    decision = {
+        "status": "uncertain",
+        "reason": "dynamic_field_reference",
+        "confidence": "low",
+        "file_path": "src/order.ts",
+        "line_no": 1,
+        "code": "const { amount: orderAmount } = order;",
+        "clue_category": "old_name",
+    }
+
+    relations = strategy.collect_relations(
+        candidate,
+        {
+            "content": content,
+            "clue": {"keyword": "amount", "clue_category": "old_name"},
+            "decision": decision,
+            "evidence_id": "old_name::src/order.ts::1",
+        },
+    )
+
+    assert len(relations) == 1
+    assert relations[0]["propagated_symbol"] == "orderAmount"
+    assert relations[0]["propagated_property"] == "amount"
+    assert relations[0]["propagation_source"] == "destructuring_alias"
 
 
 def test_collect_relations_derives_same_file_variable_propagation() -> None:

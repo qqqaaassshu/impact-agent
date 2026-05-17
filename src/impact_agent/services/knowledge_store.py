@@ -73,8 +73,11 @@ def append_assessment_summary(report: AssessmentReport, request: dict | None = N
     target.write_text(json.dumps(record.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def list_assessment_history(limit: int = 50) -> list[AssessmentHistoryItem]:
-    items = [record.history_item for record in _iter_records()]
+def list_assessment_history(limit: int = 50, entrypoint: str | None = None) -> list[AssessmentHistoryItem]:
+    records = _iter_records()
+    if entrypoint:
+        records = [record for record in records if record.request.get("entrypoint") == entrypoint]
+    items = [record.history_item for record in records]
     return items[:limit]
 
 

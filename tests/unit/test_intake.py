@@ -102,6 +102,27 @@ def test_intake_parses_arrow_field_rename_locally(monkeypatch) -> None:
     assert isinstance(result, AssessmentRequest)
     assert result.change_scope.old_name == "integrateAmt"
     assert result.change_scope.new_name == "totalIntegrateAmt"
+    assert result.change_scope.include_new_name_references is False
+
+
+def test_intake_enables_new_name_reference_when_requirement_requests_it(monkeypatch) -> None:
+    monkeypatch.setattr(
+        intake,
+        "get_llm",
+        lambda: (_ for _ in ()).throw(AssertionError("should not call llm")),
+    )
+
+    result = intake_and_normalize(
+        {
+            "source": {"type": "local", "root_path": "/tmp/project"},
+            "requirement": "toastMsg -> showToastMsg，并检查是否已有新名称引用",
+        }
+    )
+
+    assert isinstance(result, AssessmentRequest)
+    assert result.change_scope.old_name == "toastMsg"
+    assert result.change_scope.new_name == "showToastMsg"
+    assert result.change_scope.include_new_name_references is True
 
 
 def test_intake_returns_clarification_for_ambiguous_input(monkeypatch) -> None:

@@ -7,7 +7,8 @@ from impact_agent.web import app as web_app
 
 
 class FakeService:
-    def submit(self, raw_input, progress_callback=None):
+    def submit(self, raw_input, progress_callback=None, entrypoint="api"):
+        assert entrypoint == "web"
         if progress_callback:
             progress_callback({"stage": "test", "title": "测试进度", "message": "测试流式进度"})
         if raw_input["requirement"] == "need clarification":
@@ -36,7 +37,10 @@ class FakeService:
             trace=[{"node": "validated_request"}],
         )
 
-    def list_history(self, limit=50):
+    def list_history(self, limit=50, entrypoint=None):
+        assert limit == 50
+        if entrypoint is not None:
+            assert entrypoint == "web"
         return [
             AssessmentHistoryItem(
                 assessment_id="a-1",
@@ -61,7 +65,8 @@ class FakeService:
             {
                 "source": {"root_path": "/tmp/project"},
                 "requirement": history_item.requirement,
-            }
+            },
+            entrypoint="web",
         )
         return AssessmentRecord(
             assessment_id="a-1",
@@ -73,7 +78,7 @@ class FakeService:
 
 
 class FailingService:
-    def submit(self, raw_input):
+    def submit(self, raw_input, progress_callback=None, entrypoint="api"):
         raise ValueError("请设置 LLM_BASE_URL")
 
 
@@ -107,9 +112,9 @@ def test_create_assessment_uses_root_when_repo_path_is_empty(monkeypatch) -> Non
     class CapturingService(FakeService):
         raw_input = None
 
-        def submit(self, raw_input):
+        def submit(self, raw_input, progress_callback=None, entrypoint="api"):
             self.raw_input = raw_input
-            return super().submit(raw_input)
+            return super().submit(raw_input, progress_callback=progress_callback, entrypoint=entrypoint)
 
     fake_service = CapturingService()
     monkeypatch.setattr(web_app, "service", fake_service)

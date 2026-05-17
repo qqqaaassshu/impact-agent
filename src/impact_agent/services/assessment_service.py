@@ -14,6 +14,7 @@ class AssessmentService:
         self,
         raw_input: dict | str | AssessmentRequest,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        entrypoint: str = "api",
     ) -> AssessmentReport | ClarificationNeeded | UnsupportedRequest:
         if progress_callback:
             progress_callback(
@@ -26,10 +27,10 @@ class AssessmentService:
         normalized = intake_and_normalize(raw_input, progress_callback=progress_callback)
         if isinstance(normalized, ClarificationNeeded | UnsupportedRequest):
             return normalized
-        return AssessmentRunner(progress_callback=progress_callback).run(normalized)
+        return AssessmentRunner(progress_callback=progress_callback, entrypoint=entrypoint).run(normalized)
 
-    def list_history(self, limit: int = 50):
-        return list_assessment_history(limit=limit)
+    def list_history(self, limit: int = 50, entrypoint: str | None = None):
+        return list_assessment_history(limit=limit, entrypoint=entrypoint)
 
     def get_history_detail(self, assessment_id: str):
         return get_assessment_record(assessment_id)

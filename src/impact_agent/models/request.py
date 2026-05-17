@@ -12,6 +12,7 @@ class ChangeScope(BaseModel):
     entity_kind: str | None = None
     old_name: str | None = None
     new_name: str | None = None
+    include_new_name_references: bool = False
     check_permissions: bool = True
     check_refresh_flow: bool = True
 

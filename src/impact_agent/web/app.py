@@ -31,7 +31,7 @@ def health() -> dict:
 
 @app.get("/api/assessments")
 def list_assessments(limit: int = 50):
-    return [item.model_dump() for item in service.list_history(limit=limit)]
+    return [item.model_dump() for item in service.list_history(limit=limit, entrypoint="web")]
 
 
 @app.get("/api/assessments/{assessment_id}")
@@ -46,7 +46,7 @@ def get_assessment(assessment_id: str):
 def create_assessment(payload: WebAssessmentInput):
     raw_input = _build_raw_input(payload)
     try:
-        result = service.submit(raw_input)
+        result = service.submit(raw_input, entrypoint="web")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=_friendly_error_message(exc)) from exc
     if isinstance(result, ClarificationNeeded):
@@ -69,7 +69,7 @@ def stream_assessment(payload: WebAssessmentInput):
 
         def run_analysis() -> None:
             try:
-                result = service.submit(raw_input, progress_callback=collect_progress)
+                result = service.submit(raw_input, progress_callback=collect_progress, entrypoint="web")
                 if isinstance(result, ClarificationNeeded):
                     queue.put(("result", {"kind": "clarification", **result.model_dump()}))
                 elif isinstance(result, UnsupportedRequest):

@@ -49,6 +49,14 @@ const decisionText = {
 };
 const reasonText = {
     api_field: '接口字段',
+    ast_bracket_property: 'AST 括号属性访问',
+    ast_config_field: 'AST 配置字段',
+    ast_destructuring_alias: 'AST 解构别名',
+    ast_destructuring_property: 'AST 解构字段',
+    ast_jsx_attribute: 'AST JSX 属性',
+    ast_object_field: 'AST 对象字段定义',
+    ast_object_property: 'AST 对象属性访问',
+    ast_type_field: 'AST 类型字段定义',
     bracket_property: '括号属性访问',
     comment_match: '注释命中，已排除',
     config_field: '配置字段',
@@ -92,6 +100,8 @@ const traceNodeText = {
     load_knowledge: '读取知识上下文',
     load_source_snapshot: '读取代码源快照',
     review_special_contexts: '特殊场景复核',
+    skill_act: '调用 Skill',
+    skill_ast_analyze: 'Skill AST 分析',
     validate_request: '校验请求',
 };
 const traceKeyText = {
@@ -110,8 +120,12 @@ const traceKeyText = {
     reviewed_count: '已复核数量',
     risk_level: '风险等级',
     search_round: '检索轮次',
+    search_engine: '检索引擎',
+    scanned_files: '命中文件数',
+    skill: 'Skill',
     skipped: '跳过原因',
     uncertain_count: '不确定数量',
+    ast_analyzed_files: 'AST 分析文件数',
 };
 const actionText = {
     finish: '结束检索',

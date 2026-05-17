@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -132,8 +133,10 @@ def search_with_rg(
         file_path = Path(data.get("path", {}).get("text", "")).resolve()
         if not file_path:
             continue
-        matched_files.add(str(file_path))
         line = data.get("lines", {}).get("text", "").rstrip("\r\n")
+        if not line_contains_keyword_reference(line, keyword):
+            continue
+        matched_files.add(str(file_path))
         results.append(
             {
                 "file_path": str(file_path),
@@ -204,8 +207,10 @@ def search_many_with_rg(
         if not parsed:
             continue
         file_path_text, line_no, line = parsed
-        matched_files.add(file_path_text)
         matched_keywords = matched_keywords_in_line(line, keywords)
+        if not matched_keywords:
+            continue
+        matched_files.add(file_path_text)
 
         for keyword in matched_keywords:
             results_by_keyword.setdefault(keyword, []).append(
@@ -241,9 +246,18 @@ def parse_rg_line(raw_line: str) -> tuple[str, int, str] | None:
 def matched_keywords_in_line(line: str, keywords: list[str]) -> list[str]:
     matched: list[str] = []
     for keyword in sorted(keywords, key=len, reverse=True):
-        if keyword in line:
+        if line_contains_keyword_reference(line, keyword):
             matched.append(keyword)
     return matched
+
+
+def line_contains_keyword_reference(line: str, keyword: str) -> bool:
+    if not keyword:
+        return False
+    # Avoid matching field names embedded in longer identifiers, e.g. `ToastMsg`
+    # inside `showToastMsg`.
+    pattern = re.compile(rf"(?<![A-Za-z0-9_$]){re.escape(keyword)}(?![A-Za-z0-9_$])")
+    return bool(pattern.search(line))
 
 
 def relative_path_text(file_path_text: str, repository_root: Path) -> str:
@@ -291,7 +305,7 @@ def search_with_python(
             continue
 
         for line_no, line in enumerate(content.splitlines(), start=1):
-            if keyword not in line:
+            if not line_contains_keyword_reference(line, keyword):
                 continue
             results.append(
                 {

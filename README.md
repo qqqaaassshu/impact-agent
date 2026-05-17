@@ -1,407 +1,314 @@
 # impact-agent
 
-一个面向前端代码仓库的“需求变更影响范围评估 Agent”工程。
+## 1. 项目概述
 
-## 项目目标
+`impact-agent` 是面向前端代码仓库的需求变更影响范围评估智能体。项目以字段变更场景为切入点，对本地前端工程进行只读扫描，识别字段重命名可能影响的页面、组件、类型定义、接口映射、mock 数据、schema 配置、表格列和表单配置，并生成结构化评估报告。
 
-本项目用于分析一条需求变更在前端代码中的影响范围，并输出结构化、可审计的分析结果。
+本项目对应公司“AI 智能体工程化实战培训”第一阶段作业，目标是在明确业务边界内完成一个可运行、可验证、可扩展的业务智能体模块。
 
-当前基础支持两类变更：
+## 2. 场景定义
 
-- `field_rename`：字段变更
-- `feature_change`：功能变更
+当前业务场景为：字段变更影响范围评估。
 
-系统目标不是开放式聊天，而是：
+典型输入：
 
-- 基于真实代码事实做分析
-- 对确认受影响、确认排除、不确定项做清晰区分
-- 输出带证据链的结构化报告
-- 支持 Vue / React 项目
-- 支持本地代码源 / GitLab 代码源
+- 工程根路径
+- 可选扫描子路径
+- 字段变更需求描述
 
-## 当前设计原则
+典型输出：
 
-- 只读分析，不修改被分析仓库代码
-- 不确定场景显式输出，不把猜测当结论
-- 主流程、框架适配、代码源适配、变更策略分层清晰
-- 优先保证架构稳定和可扩展性，再逐步提高精度
+- 需求是否属于当前支持范围
+- 已确认受影响位置
+- 已排除位置
+- 静态分析无法确认的位置
+- 证据链
+- 风险等级
+- 整体置信度
 
-## 架构概览
+## 3. 当前交付范围
 
-核心抽象包括：
+当前版本支持：
 
-- `ChangeStrategy`
-  - 面向不同变更类型的分析策略
-  - 当前包含 `field_rename` 和 `feature_change`
-- `CodeSourceAdapter`
-  - 统一本地代码源和 GitLab 代码源
-- `FrameworkAnalyzer`
-  - 统一 Vue 和 React 的模板 / JSX / 事件绑定 / 字段使用分析
-- `RiskPolicy` / `ConfidencePolicy`
-  - 风险和置信度规则
-- `EvidenceModel`
-  - 统一证据链输出结构
+- 变更类型：`field_rename`
+- 代码源：本地代码仓库
+- 前端框架：Vue、React
+- 文件类型：`.ts` `.tsx` `.js` `.jsx` `.vue` `.json`
+- 交互入口：CLI、Web 页面、Web 流式接口
+- 运行方式：只读分析，不修改被分析仓库
 
-## 目录结构
+当前版本不承诺支持：
+
+- 功能变更 `feature_change` 的完整分析链路
+- GitLab 远程代码源
+- 全量 AST 深度分析
+- 自动修复、自动提交、自动创建 MR
+- 跨仓库、跨服务、跨语言影响链分析
+
+## 4. 交付状态说明
+
+当前项目定位为培训第一阶段可交付的智能体最小可用版本，具备以下基础能力：
+
+- 基于 LangGraph 的多阶段流程编排
+- 基于本地代码源的确定性扫描能力
+- 面向前端字段变更的证据分类能力
+- 由前端检索 Skill 提供的关键词搜索和 AST 分析能力
+- 面向 Vue / React 的上下文分析能力
+- 面向高风险不确定项的有限 LLM 复核能力
+- 面向 Web 的流式阶段状态展示能力
+- 面向评审和后续集成的结构化报告能力
+
+当前项目尚未达到生产级平台标准。正式生产化还需要补充 MCP Tool 服务形态、代码索引缓存、权限控制、审计日志、GitLab 代码源、增量扫描、任务队列和更完整的静态分析能力。
+
+## 5. 核心流程
+
+系统主流程如下：
+
+1. 用户提交工程路径、可选扫描子路径和需求描述
+2. `intake` 模块将自然语言需求规范化为结构化请求
+3. Agent 判断需求是否属于当前支持范围
+4. 不支持的需求直接返回拒绝原因
+5. 支持的需求进入前端代码检索流程
+6. 扫描引擎召回候选代码证据
+7. 字段变更策略对候选证据进行分类
+8. Vue / React 分析器补充框架上下文判断
+9. 特殊高风险上下文进入有限 LLM 复核
+10. 风险与置信度策略生成整体判断
+11. 报告构建器输出结构化 JSON
+12. Web 端以流式方式展示阶段进度和最终结果
+
+详细架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+## 6. Skill、扫描引擎与 LLM 分工
+
+项目中各能力边界如下：
+
+- Skill：定义前端代码检索工作流、输入输出契约、调用顺序和注意事项
+- 扫描引擎：执行本地文件过滤、关键词搜索、上下文截取和结果归一化
+- Agent 主流程：负责阶段编排、证据解释、风险评估和报告生成
+- LLM：参与需求支持性判断、少量线索补充和高风险上下文复核
+
+LLM 不作为全仓库扫描器，也不作为代码事实的主来源。报告结论应优先依据本地代码证据生成。
+
+当前 Skill 位于 [skills/frontend-impact-search/SKILL.md](skills/frontend-impact-search/SKILL.md)。当前实现已具备本地 Skill 化检索能力，正式 MCP Tool 封装列为后续增强事项。
+
+## 7. 大型仓库处理策略
+
+为适配大型前端项目，当前版本采用分层分析策略：
+
+- 使用字段名和命名变体生成确定性检索线索
+- 使用 `ripgrep` 执行多关键词快速召回
+- 通过本地规则识别模板、JSX、对象属性、类型定义、mock、schema、列配置和表单配置
+- 对已召回的 JS / TS 文件执行有限 AST 分析，识别类型字段、对象属性、配置字段和解构绑定
+- 将注释命中、动态字段、变量传递和上下文不足等结果显式标记
+- 仅对有限数量的高风险不确定项调用 LLM
+
+LLM 复核默认配置：
+
+- `LLM_CONTEXT_REVIEW=true`
+- `MAX_CONTEXT_REVIEW_ITEMS=20`
+- LLM 仅可判断已有 evidence
+- LLM 不得新增命中文件
+
+该策略用于控制模型调用成本、扫描耗时和误报范围。
+
+## 8. 变量传递处理策略
+
+当前版本支持有限的同文件局部变量传递识别。
+
+可识别场景包括：
+
+- 字段字面量赋值给变量
+- 字段字面量作为对象 key 或配置值
+- AST 识别到的解构别名和简单属性绑定
+- 同文件有限范围内的变量引用
+
+变量传递产生的结果默认标记为 `variable_propagation_reference`，通常进入不确定项或高风险复核队列。当前版本不承诺完整覆盖跨文件变量传播、import alias、类型引用链和调用链分析。
+
+## 9. Web 使用方式
+
+启动后端：
+
+```powershell
+python -m uvicorn impact_agent.web.app:app --host 127.0.0.1 --port 8000
+```
+
+启动前端：
+
+```powershell
+npm.cmd --prefix web run dev -- --host 127.0.0.1 --port 5173
+```
+
+访问地址：
 
 ```text
-impact-agent/
-├── CLAUDE.md
-├── README.md
-├── pyproject.toml
-├── .env.example
-├── src/
-│   └── impact_agent/
-│       ├── cli.py
-│       ├── config.py
-│       ├── models/
-│       ├── orchestrator/
-│       ├── strategies/
-│       ├── adapters/
-│       │   ├── code_source/
-│       │   └── framework/
-│       ├── services/
-│       ├── policies/
-│       └── tools/
-├── web/
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── src/
-│       ├── App.vue
-│       ├── api/
-│       └── types/
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── fixtures/
-└── data/
-    └── knowledge/
+http://127.0.0.1:5173/
 ```
 
-## 当前开发状态
+页面输入项：
 
-当前已经完成的 MVP / agent slice：
+- 工程路径：例如 `D:\Wrok\product`
+- 扫描子路径：可选，留空表示扫描工程根目录
+- 需求描述：例如“将订单金额字段从 amount 改为 totalAmount”
 
-- 本地代码源 `local` 读取、搜索、快照采集
-- `field_rename` 主链路
-- `AssessmentRequest` / `AssessmentState` / `AssessmentReport` 模型
-- LangGraph 主流程编排
-- LLM 驱动的 intake 解析
-- 确定性字段线索生成，必要时可开启 LLM clue 扩展
-- 确定性搜索收敛，避免大仓库扫描时频繁调用 LLM
-- 变量传递派生证据与特殊上下文 LLM 复核
-- 风险、置信度、证据链、结构化 JSON 报告输出
-- FastAPI Web API
-- Vue 3 + Vite 可视化界面
-- 本地文件持久化的分析历史记录
-- 基于 mocked LLM 的单元测试
+Web 展示内容：
 
-当前仍未完成 / MVP 限制：
+- 当前分析阶段
+- LLM 参与阶段
+- 注释命中和排除原因
+- 确认受影响项
+- 已排除项
+- 不确定项
+- 证据链
+- 风险等级和整体置信度
 
-- `feature_change` 主链路暂未实现；当前 runner 会明确拒绝非 `field_rename` 请求
-- GitLab 代码源
-- Vue / React 专项 analyzer 深化
-- 更强的关系追踪与 AST 能力
-- 真实 provider 集成测试
+Web 页面不设置测试数据默认值。历史记录优先展示 Web 入口产生的分析记录。
 
-后续扩展 `feature_change` 时，建议新增独立 `FeatureChangeStrategy` 实现入口搜索、事件 handler、API 调用和刷新链路分析，再在 runner 中按 `change_type` 选择不同 strategy。
+## 10. CLI 使用方式
 
-## 本地开发环境准备
-
-建议使用 Python 3.11 及以上版本。
-
-```bash
-cd /Users/huchunming/Documents/工作/agents/impact-agent
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -e .
-pip install pytest
+```powershell
+python -m impact_agent.cli assess --repo-root "D:\Wrok\product" --requirement "将订单金额字段从 amount 改为 totalAmount"
 ```
 
-如果要跑真实 LLM 链路，再准备环境变量。推荐优先使用 OpenAI 兼容接口，这样国产大模型、企业统一网关、代理服务都能通过同一套配置接入：
+CLI 输出为结构化 JSON，可用于保存评审材料或接入后续流水线。
 
-```bash
-cp .env.example .env
-export LLM_MODEL=deepseek-chat
-export LLM_BASE_URL=https://api.deepseek.com
-export LLM_API_KEY=your_key_here
+## 11. LLM 配置
+
+项目默认采用 OpenAI 兼容接口，便于接入国产大模型、公司内部模型网关或代理服务。
+
+基础配置：
+
+```env
+LLM_MODEL=deepseek-chat
+LLM_BASE_URL=https://api.deepseek.com
+LLM_API_KEY=your_key_here
+LLM_STRUCTURED_MODE=json
 ```
 
-也可以使用内置厂商别名，少写 `LLM_BASE_URL`：
+也可以使用 provider 别名：
 
-```bash
-export LLM_PROVIDER=deepseek
-export LLM_MODEL=deepseek-chat
-export LLM_API_KEY=your_key_here
+```env
+LLM_PROVIDER=qwen
+LLM_MODEL=qwen-plus
+LLM_API_KEY=your_key_here
 ```
 
-常见配置示例：
+已预留 provider：
 
-| 服务 | LLM_PROVIDER | LLM_MODEL 示例 |
-| --- | --- | --- |
-| DeepSeek | `deepseek` | `deepseek-chat` |
-| 通义千问 / 阿里百炼 | `qwen` | `qwen-plus` |
-| 智谱 GLM | `zhipu` | `glm-4-flash` |
-| Moonshot / Kimi | `moonshot` | `moonshot-v1-8k` |
-| 火山方舟 / 豆包 | `ark` | 方舟 endpoint id 或模型名 |
-| 百度千帆 | `baidu` | 千帆控制台中的模型名 |
-| 硅基流动 | `siliconflow` | `Qwen/Qwen2.5-72B-Instruct` |
-| OpenRouter | `openrouter` | `qwen/qwen-2.5-coder-32b-instruct` |
+- `deepseek`：DeepSeek
+- `qwen`：通义千问 / 阿里百炼
+- `zhipu`：智谱 GLM
+- `moonshot`：Moonshot / Kimi
+- `ark`：火山方舟 / 豆包
+- `siliconflow`：硅基流动
 
-如果公司内部有统一大模型网关，建议不用厂商别名，直接配置：
+公司内部网关配置示例：
 
-```bash
-export LLM_MODEL=网关中的模型名
-export LLM_BASE_URL=https://your-company-llm-gateway/v1
-export LLM_API_KEY=your_key_here
+```env
+LLM_MODEL=your-company-model
+LLM_BASE_URL=https://your-company-llm-gateway/v1
+LLM_API_KEY=your_key_here
+LLM_STRUCTURED_MODE=json
 ```
 
-结构化输出默认使用兼容性更高的 JSON 模式：
+大型仓库建议配置：
 
-```bash
-export LLM_STRUCTURED_MODE=json
+```env
+LLM_CLUE_EXPANSION=false
+LLM_SEMANTIC_REVIEW=false
+LLM_CONTEXT_REVIEW=true
+MAX_CONTEXT_REVIEW_ITEMS=20
 ```
 
-这个模式不会强依赖 function calling / tool calling。Agent 会要求模型返回 JSON，再由本地 Pydantic 做结构校验，因此更适合国产模型和公司内部网关。如果确认模型服务完整支持原生工具调用，也可以切换：
+完整模板见 [.env.example](.env.example)。
 
-```bash
-export LLM_STRUCTURED_MODE=native
+## 12. 输出结构
+
+报告核心字段：
+
+- `summary`：评估摘要
+- `coverage`：扫描范围和覆盖情况
+- `confirmed_affected`：确认受影响项
+- `excluded`：确认不受影响项
+- `uncertain`：无法静态确认项
+- `evidence_chain`：证据链
+- `risk_level`：风险等级
+- `overall_confidence`：整体置信度
+
+分类原则：
+
+- `confirmed_affected` 必须具备明确代码证据
+- `excluded` 必须具备明确排除原因
+- `uncertain` 表示动态引用、变量传递、上下文不足或静态分析无法确认
+
+## 13. 测试与验证
+
+后端单测：
+
+```powershell
+python -m pytest tests/unit
 ```
 
-性能优先的默认策略是关闭逐条语义复核：
+前端构建：
 
-```bash
-export LLM_CLUE_EXPANSION=false
-export LLM_SEMANTIC_REVIEW=false
-export LLM_CONTEXT_REVIEW=true
-export MAX_CONTEXT_REVIEW_ITEMS=20
+```powershell
+npm.cmd --prefix web run build
 ```
 
-关闭逐条语义复核后，字段搜索关键词使用确定性变体生成，动态字段访问会先进入“不确定项”，不会逐条调用 LLM，因此更适合大项目快速扫描。`LLM_CONTEXT_REVIEW=true` 只会在扫描完成后批量复核少量高风险上下文，默认最多 `20` 条；LLM 只能判断已有 evidence，不能新增命中文件或扩大扫描范围。
+当前测试覆盖：
 
-变量传递的控制方式是：先由本地静态规则从已命中的字段字符串派生同文件、同作用域内的变量使用证据，例如 `const fieldName = "amount"` 后续的 `row[fieldName]`；这些派生证据仍进入 `uncertain`，再按上限交给 LLM 做局部复核。
+- 需求支持性判断
+- 本地代码源适配
+- 前端搜索结果归一化
+- 字段变更策略
+- Vue / React 分析器
+- 注释命中排除
+- 变量传递候选识别
+- LLM 上下文复核上限
+- Web API 和流式进度
 
-如果需要更精细地让 LLM 扩展关键词或逐条判断动态引用是否确认受影响，可以改为：
-
-```bash
-export LLM_CLUE_EXPANSION=true
-export LLM_SEMANTIC_REVIEW=true
-```
-
-如果希望 Web 或纯文本 intake 不让用户填写本地项目路径，可以提前配置默认项目：
-
-```bash
-export REPO_ROOT_PATH=/path/to/project
-# REPO_PATH 可选；留空表示扫描工程根目录。大项目建议填写真实前端子目录以减少扫描耗时。
-export REPO_PATH=
-```
-
-注意：当前实现统一使用 OpenAI 兼容的 Chat Completions 协议，不再绑定 Anthropic / OpenAI 等专用 SDK。只要模型服务支持 `/v1/chat/completions` 风格接口，就优先通过 `LLM_BASE_URL` 接入。
-
-## 如何使用
-
-### 方式一：结构化 JSON 输入
-
-当前可直接使用：
-
-```bash
-.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_request.json
-```
-
-`tests/fixtures/local_field_rename_request.json` 示例：
-
-```json
-{
-  "source": {
-    "type": "local",
-    "root_path": "tests/fixtures/local_field_rename_project",
-    "include_uncommitted": false
-  },
-  "repo_path": "src",
-  "requirement": "将订单金额字段从 amount 改为 totalAmount",
-  "change_type": "field_rename",
-  "change_scope": {
-    "module": "order",
-    "old_name": "amount",
-    "new_name": "totalAmount",
-    "entity_kind": "api_field"
-  },
-  "file_types": [".ts"]
-}
-```
-
-### 方式二：纯文本需求文件输入
-
-当前 CLI 也支持把纯文本文件交给 intake：
-
-```bash
-.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_prompt.txt
-```
-
-`tests/fixtures/local_field_rename_prompt.txt` 示例：
+## 14. 项目结构
 
 ```text
-请帮我评估这个字段改名会影响哪里
-需求：把订单金额字段从 amount 改成 totalAmount
+src/impact_agent/
+  adapters/              # 代码源与框架适配
+  orchestrator/          # LangGraph 编排
+  policies/              # 风险与置信度规则
+  services/              # 搜索、报告、知识库、上下文复核
+  strategies/            # 变更类型分析策略
+  web/                   # FastAPI Web API
+
+skills/frontend-impact-search/
+  SKILL.md               # 前端检索 Skill 入口
+  scripts/local_search.py
+  references/search-patterns.md
+
+web/
+  src/App.vue            # Web 页面
 ```
 
-注意：纯文本输入会走 LLM intake，因此必须先配置 `LLM_MODEL` 和对应 provider 的 API Key。
+## 15. 后续规划
 
-如果文本里缺少必要信息，CLI 会输出：
+短期规划：
 
-```json
-{
-  "needs_clarification": true,
-  "questions": ["..."]
-}
-```
+- 封装正式 MCP Tool
+- 准备稳定演示用例和评审截图
+- 增加真实项目字段变更样例
+- 优化 Web 对高风险 evidence 的展示
 
-## 测试步骤
+中期规划：
 
-### 1. 运行全部单元测试
+- 建立项目索引缓存和增量扫描机制
+- 增强 TypeScript AST、import alias、变量传递和类型引用追踪
+- 扩展 GitLab 代码源
+- 将 `feature_change` 推进为可用分析链路
+- 引入人工反馈，沉淀项目级规则
 
-这一步不依赖真实 LLM provider，测试里已经 mock 掉了 `get_llm()`：
+长期规划：
 
-```bash
-.venv/bin/python -m pytest tests/unit
-```
+- 接入公司权限体系和审计日志
+- 接入 CI / MR 流程
+- 支持跨仓库、跨服务影响链
+- 支持改造建议生成，并保留人工确认机制
 
-当前覆盖包括：
-
-- intake 自然语言解析与 clarification 分支
-- `field_rename` 的 clue 合并与规则分类
-- runner 的 conditional routing 与最大轮次收敛
-- CLI 的 clarification 输出与成功输出
-- Web API 的提交、追问、历史列表、历史详情
-- 本地代码源搜索与快照结构
-
-### 2. 只验证本轮新增 Web 测试
-
-```bash
-.venv/bin/python -m pytest tests/unit/test_assessment_service.py
-.venv/bin/python -m pytest tests/unit/test_web_app.py
-```
-
-### 3. 运行 Vue 3 前端构建
-
-```bash
-npm --prefix web install
-npm --prefix web run build
-```
-
-### 4. 运行 CLI JSON 冒烟
-
-这一步会走真实 agent 主链路，因此需要先配置 `LLM_MODEL`：
-
-```bash
-.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_request.json
-```
-
-预期结果：
-
-- 输出结构化 JSON
-- `summary.change_type` 为 `field_rename`
-- 包含 `confirmed_affected`
-- 包含 `coverage.search_round`
-- 包含 `trace`
-
-### 5. 运行 CLI 纯文本冒烟
-
-```bash
-.venv/bin/python -m impact_agent.cli --input tests/fixtures/local_field_rename_prompt.txt
-```
-
-预期结果分两种：
-
-- 信息足够：输出结构化分析报告
-- 信息不足：输出 `ClarificationNeeded` JSON
-
-### 6. 启动 Web 可视化界面
-
-后端：
-
-```bash
-.venv/bin/python -m uvicorn impact_agent.web.app:app --reload --host 127.0.0.1 --port 8000
-```
-
-前端：
-
-```bash
-npm --prefix web run dev
-```
-
-然后在浏览器打开 Vite 输出的本地地址。前端默认会把 `/api` 请求代理到 `http://127.0.0.1:8000`。
-
-### 7. Web 端手工验证路径
-
-1. 打开页面后，左侧应显示历史记录列表或空态。
-2. 填写工程路径；扫描子路径可留空，留空表示扫描工程根目录。
-3. 大项目建议填写真实前端子目录，例如 `packages\\xxx\\src`，否则全量扫描会更慢。
-4. 点击“开始分析”。
-5. 页面应实时显示“解析需求、读取代码源快照、生成检索线索、扫描并分析命中、生成报告”等进度。
-6. 如果已配置真实 `LLM_MODEL`，应看到结构化报告。
-7. 如果信息不足或 LLM 判断需要补充，应看到追问列表。
-8. 分析完成后，左侧历史记录应刷新。
-9. 点击历史记录，应恢复对应报告详情。
-
-### 8. 当前测试限制
-
-- 未配置 `LLM_MODEL` 时，CLI 冒烟和 Web 真实提交无法执行完整分析
-- 当前单元测试已经覆盖 Web API 分支，但真实 provider 联调仍需单独验证
-- `feature_change`、GitLab、深度框架分析暂未纳入当前测试范围
-
-## 预期输出
-
-系统当前输出结构化 JSON，核心字段包括：
-
-- `summary`
-- `confirmed_affected`
-- `excluded`
-- `uncertain`
-- `coverage`
-- `evidence_chain`
-- `knowledge_used`
-- `next_action`
-- `trace`
-
-## 当前限制说明
-
-在当前版本中：
-
-- 只有 `field_rename` 主链路可用
-- 只有本地代码源 `local` 可用
-- 搜索结果分类以规则兜底，并对动态引用增加 LLM 语义二次判断
-- 真实 LLM 集成测试尚未沉淀到 `tests/integration/`
-- `feature_change`、GitLab、深度框架分析仍待补齐
-
-## 开发约束
-
-更详细的长期开发约束见：
-
-- `CLAUDE.md`
-
-其中包括：
-
-- 模块边界
-- 变更类型规则
-- 框架支持规则
-- 代码源规则
-- 输出规则
-- 测试要求
-
-## 后续扩展方向
-
-后续可扩展：
-
-- 更多变更类型
-- 更多代码源
-- 更高精度 AST 分析
-- 更完整的调用链与权限链分析
-- 更成熟的项目知识库
-
-## 说明
-
-本 README 主要用于说明当前工程状态、使用方法和测试入口。
-
-如果需要更详细的实现设计，请参考单独的设计文档。
+详细规划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
