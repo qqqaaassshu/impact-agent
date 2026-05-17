@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from impact_agent.models.llm import ClueExpansionResult, SearchDecisionResult
+from impact_agent.models.llm import ClueExpansionResult, SearchDecisionResult, SemanticMatchDecision
 from impact_agent.orchestrator import runner as runner_module
 from impact_agent.orchestrator.runner import AssessmentRunner
 from impact_agent.services.intake import intake_and_normalize
@@ -37,13 +37,15 @@ def build_request():
     return intake_and_normalize(payload)
 
 
-def test_runner_produces_three_way_report_with_search_loop(monkeypatch) -> None:
+def test_runner_produces_three_way_report_and_finishes_when_candidates_exist(monkeypatch) -> None:
+    monkeypatch.setattr(runner_module, "LLM_CONTEXT_REVIEW_ENABLED", False)
     clue_llm = FakeLLM(
         [
             ClueExpansionResult(
                 clues=["record.amount"],
                 reasoning="include property access variant",
-            )
+            ),
+            SemanticMatchDecision(is_affected=None, reason="dynamic access needs review"),
         ]
     )
     decision_llm = FakeLLM(
@@ -64,22 +66,28 @@ def test_runner_produces_three_way_report_with_search_loop(monkeypatch) -> None:
 
     assert report.summary.change_type == "field_rename"
     assert report.confirmed_affected
-    assert report.uncertain_matches
-    assert report.excluded_matches
+    assert report.uncertain
+    assert report.excluded
+    assert "uncertain_matches" not in report.model_dump()
+    assert "excluded_matches" not in report.model_dump()
     assert report.evidence_chain["count"] >= 3
-    assert report.coverage["search_round"] == 2
-    assert "llm_decide_search:search_more" in report.trace
-    assert "llm_decide_search:finish" in report.trace
+    assert report.coverage["derived_relation_count"] >= 1
+    assert any(item.get("reason") == "variable_propagation_reference" for item in report.uncertain)
+    assert report.coverage["search_round"] == 1
+    assert any(item.get("node") == "decide_search_next_step" and item.get("action") == "finish" for item in report.trace)
+    assert any(item.get("node") == "review_special_contexts" for item in report.trace)
 
 
 def test_runner_stops_at_max_search_rounds(monkeypatch) -> None:
+    monkeypatch.setattr(runner_module, "LLM_CONTEXT_REVIEW_ENABLED", False)
     monkeypatch.setattr(runner_module, "MAX_SEARCH_ROUNDS", 1)
     clue_llm = FakeLLM(
         [
             ClueExpansionResult(
                 clues=["amount_value"],
                 reasoning="include snake_case variant",
-            )
+            ),
+            SemanticMatchDecision(is_affected=None, reason="dynamic access needs review"),
         ]
     )
     decision_llm = FakeLLM(
@@ -98,5 +106,31 @@ def test_runner_stops_at_max_search_rounds(monkeypatch) -> None:
     report = AssessmentRunner().run(request)
 
     assert report.coverage["search_round"] == 1
-    assert report.trace.count("generated_clues") == 1
-    assert "llm_decide_search:search_more" in report.trace
+    assert sum(1 for item in report.trace if item.get("node") == "generate_clues") == 1
+    assert any(item.get("node") == "decide_search_next_step" and item.get("action") == "finish" for item in report.trace)
+
+
+def test_runner_emits_llm_context_review_progress(monkeypatch) -> None:
+    monkeypatch.setattr(runner_module, "LLM_CONTEXT_REVIEW_ENABLED", True)
+    monkeypatch.setattr(runner_module, "MAX_CONTEXT_REVIEW_ITEMS", 20)
+    monkeypatch.setattr(
+        runner_module,
+        "review_context_candidates",
+        lambda request, candidates: {
+            item["evidence_id"]: {
+                "evidence_id": item["evidence_id"],
+                "status": "uncertain",
+                "reason": item["reason"],
+                "confidence": "low",
+            }
+            for item in candidates
+        },
+    )
+
+    events = []
+    request = build_request()
+    report = AssessmentRunner(progress_callback=events.append).run(request)
+
+    assert report.uncertain
+    assert any(event["stage"] == "review_special_contexts" for event in events)
+    assert any(event["stage"] == "llm_context_review" for event in events)

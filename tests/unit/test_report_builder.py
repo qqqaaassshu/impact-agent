@@ -6,7 +6,7 @@ def test_report_builder_sets_review_flag_for_uncertain_items() -> None:
     state = AssessmentState(
         request={"requirement": "rename amount", "change_type": "field_rename"},
         source_snapshot={"type": "local"},
-        uncertain_matches=[{"file_path": "src/dynamic.ts"}],
+        uncertain=[{"file_path": "src/dynamic.ts"}],
         risk={"risk_level": "medium"},
         confidence={"overall_confidence": "medium"},
     )
@@ -14,4 +14,5 @@ def test_report_builder_sets_review_flag_for_uncertain_items() -> None:
     report = build_report(state)
 
     assert report.summary.needs_human_review is True
+    assert report.uncertain == [{"file_path": "src/dynamic.ts"}]
     assert report.next_action is not None

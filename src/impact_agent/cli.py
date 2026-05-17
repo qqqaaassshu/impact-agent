@@ -1,7 +1,7 @@
 import argparse
 import json
 
-from impact_agent.models.llm import ClarificationNeeded
+from impact_agent.models.llm import ClarificationNeeded, UnsupportedRequest
 from impact_agent.services.assessment_service import AssessmentService
 
 
@@ -14,7 +14,7 @@ def main() -> None:
         raw_input = file.read()
 
     result = AssessmentService().submit(raw_input)
-    if isinstance(result, ClarificationNeeded):
+    if isinstance(result, ClarificationNeeded | UnsupportedRequest):
         print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
         return
 

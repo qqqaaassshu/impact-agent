@@ -19,8 +19,8 @@ class Summary(BaseModel):
 class AssessmentReport(BaseModel):
     summary: Summary
     confirmed_affected: list[dict] = Field(default_factory=list)
-    uncertain_matches: list[dict] = Field(default_factory=list)
-    excluded_matches: list[dict] = Field(default_factory=list)
+    uncertain: list[dict] = Field(default_factory=list)
+    excluded: list[dict] = Field(default_factory=list)
     coverage: dict = Field(default_factory=dict)
     evidence_chain: dict = Field(default_factory=dict)
     knowledge_used: dict = Field(default_factory=dict)

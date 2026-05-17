@@ -15,6 +15,15 @@ def test_local_search_finds_matches() -> None:
     assert any(item["relative_path"] == "src/order.ts" for item in result["results"])
 
 
+def test_local_search_many_groups_matches() -> None:
+    adapter = LocalCodeSourceAdapter(str(FIXTURE_ROOT))
+
+    result = adapter.search_many(["amount", "totalAmount"], [".ts"], "src")
+
+    assert result["results_by_keyword"]["amount"]
+    assert result["results_by_keyword"]["totalAmount"]
+
+
 def test_local_snapshot_reports_directory_metadata() -> None:
     adapter = LocalCodeSourceAdapter(str(FIXTURE_ROOT))
 

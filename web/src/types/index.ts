@@ -4,6 +4,13 @@ export interface ClarificationNeeded {
   questions: string[]
 }
 
+export interface UnsupportedRequest {
+  kind: 'unsupported'
+  supported: false
+  reason: string
+  current_supported_change_types: string[]
+}
+
 export interface AssessmentSummary {
   requirement: string
   change_type: string
@@ -42,8 +49,8 @@ export interface AssessmentReport {
   kind?: 'report'
   summary: AssessmentSummary
   confirmed_affected: MatchItem[]
-  uncertain_matches: MatchItem[]
-  excluded_matches: MatchItem[]
+  uncertain: MatchItem[]
+  excluded: MatchItem[]
   coverage: Record<string, unknown>
   evidence_chain: {
     items: MatchItem[]
@@ -78,6 +85,24 @@ export interface AssessmentRecord {
 
 export interface AssessmentSubmitInput {
   requirement: string
+  root_path: string
+  repo_path?: string
+  change_type?: string
+  file_types?: string[]
 }
 
-export type AssessmentSubmitResult = ClarificationNeeded | AssessmentReport
+export type AssessmentSubmitResult = ClarificationNeeded | UnsupportedRequest | AssessmentReport
+
+export interface ProgressEvent {
+  stage: string
+  title: string
+  message: string
+  [key: string]: unknown
+}
+
+export type AssessmentStreamEvent =
+  | { event: 'progress'; data: ProgressEvent }
+  | { event: 'result'; data: AssessmentSubmitResult }
+  | { event: 'done'; data: { title?: string; message?: string } }
+  | { event: 'error'; data: { message: string } }
+  | { event: 'heartbeat'; data: { message: string } }

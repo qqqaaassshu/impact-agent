@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 
 from impact_agent.adapters.code_source.base import CodeSourceAdapter
+from impact_agent.services.frontend_search import search_local_candidates, search_local_candidates_many
 
 
 class LocalCodeSourceAdapter(CodeSourceAdapter):
@@ -38,40 +39,20 @@ class LocalCodeSourceAdapter(CodeSourceAdapter):
         return snapshot
 
     def search(self, keyword: str, file_types: list[str], repo_path: str | None = None) -> dict:
-        search_root = self._resolve_search_root(repo_path)
-        normalized_types = set(file_types)
-        results: list[dict] = []
-        scanned_files = 0
+        return search_local_candidates(
+            root_path=str(self.root_path),
+            keyword=keyword,
+            file_types=file_types,
+            repo_path=repo_path,
+        )
 
-        for file_path in search_root.rglob("*"):
-            if not file_path.is_file() or file_path.suffix not in normalized_types:
-                continue
-            scanned_files += 1
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-
-            for line_no, line in enumerate(content.splitlines(), start=1):
-                if keyword in line:
-                    results.append(
-                        {
-                            "file_path": str(file_path),
-                            "relative_path": str(file_path.relative_to(self.root_path)),
-                            "line_no": line_no,
-                            "line": line.strip(),
-                            "keyword": keyword,
-                        }
-                    )
-
-        return {
-            "keyword": keyword,
-            "search_root": str(search_root),
-            "scanned_files": scanned_files,
-            "results": results,
-        }
+    def search_many(self, keywords: list[str], file_types: list[str], repo_path: str | None = None) -> dict:
+        return search_local_candidates_many(
+            root_path=str(self.root_path),
+            keywords=keywords,
+            file_types=file_types,
+            repo_path=repo_path,
+        )
 
     def read(self, file_path: str) -> dict:
         target = Path(file_path)
@@ -95,14 +76,6 @@ class LocalCodeSourceAdapter(CodeSourceAdapter):
                 "file_path": str(target),
                 "error": str(exc),
             }
-
-    def _resolve_search_root(self, repo_path: str | None) -> Path:
-        if not repo_path:
-            return self.root_path
-        candidate = (self.root_path / repo_path).resolve()
-        if not candidate.exists():
-            raise FileNotFoundError(f"repo_path does not exist: {repo_path}")
-        return candidate
 
     def _run_git(self, args: list[str]) -> str:
         try:

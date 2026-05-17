@@ -1,20 +1,132 @@
 import { computed, onMounted, reactive, ref } from 'vue';
-import { fetchHistory, fetchHistoryDetail, submitAssessment } from './api';
+import { fetchHistory, fetchHistoryDetail, streamAssessment } from './api';
 const form = reactive({
-    root_path: 'tests/fixtures/local_field_rename_project',
-    repo_path: 'src',
-    requirement: '将订单金额字段从 amount 改为 totalAmount',
-    file_types: '.ts',
+    root_path: '',
+    repo_path: '',
+    requirement: '',
 });
+const clarificationAnswer = ref('');
 const loading = ref(false);
 const historyLoading = ref(false);
 const histories = ref([]);
 const report = ref(null);
 const clarification = ref(null);
+const unsupported = ref(null);
 const selectedHistoryId = ref(null);
 const errorMessage = ref('');
+const progressEvents = ref([]);
+const streamStatus = ref('idle');
 const evidenceItems = computed(() => report.value?.evidence_chain?.items ?? []);
-const prettyJson = computed(() => (report.value ? JSON.stringify(report.value, null, 2) : ''));
+const coverageItems = computed(() => {
+    if (!report.value)
+        return [];
+    return Object.entries(report.value.coverage).map(([key, value]) => ({
+        key,
+        label: displayCoverageKey(key),
+        value: displayCoverageValue(key, value),
+    }));
+});
+const changeTypeText = {
+    field_rename: '字段变更',
+    feature_change: '功能变更',
+};
+const riskText = {
+    high: '高',
+    medium: '中',
+    low: '低',
+    unknown: '未知',
+};
+const confidenceText = {
+    high: '高',
+    medium: '中',
+    low: '低',
+    unknown: '未知',
+};
+const decisionText = {
+    confirmed_affected: '确定影响',
+    uncertain: '不确定',
+    excluded: '已排除',
+};
+const reasonText = {
+    api_field: '接口字段',
+    bracket_property: '括号属性访问',
+    comment_match: '注释命中，已排除',
+    config_field: '配置字段',
+    dynamic_field_reference: '动态字段引用',
+    file_read_failed: '文件读取失败',
+    jsx_expression: 'JSX 表达式引用',
+    llm_semantic_confirmed: '语义判断为受影响',
+    llm_semantic_excluded: '语义判断为可排除',
+    object_field: '对象字段定义',
+    object_property: '对象属性访问',
+    react_bracket_property: 'React 括号属性访问',
+    react_config_field: 'React 配置字段',
+    react_jsx_expression: 'React JSX 表达式引用',
+    react_object_field: 'React 对象字段定义',
+    react_object_property: 'React 对象属性访问',
+    react_string_key: 'React 字符串键名',
+    static_field_reference: '静态字段引用',
+    string_key: '字符串键名',
+    substring_only_match: '仅子串命中，暂不作为字段引用',
+    template_binding: '模板绑定引用',
+    template_interpolation: '模板插值引用',
+    variable_propagation_reference: '变量传递引用',
+    vue_bracket_property: 'Vue 括号属性访问',
+    vue_object_field: 'Vue 对象字段定义',
+    vue_object_property: 'Vue 对象属性访问',
+    vue_string_key: 'Vue 字符串键名',
+    vue_template_binding: 'Vue 模板绑定引用',
+    vue_template_interpolation: 'Vue 模板插值引用',
+};
+const traceNodeText = {
+    analyze_matches: '分析候选命中',
+    build_report: '生成报告',
+    decide_search_next_step: '判断是否继续检索',
+    evaluate_confidence: '评估置信度',
+    evaluate_risk: '评估风险',
+    generate_clues: '生成检索线索',
+    llm_clue_expansion: '大模型扩展关键词',
+    llm_context_review: '大模型复核特殊上下文',
+    llm_intake: '大模型判断需求',
+    llm_semantic_review: '大模型复核动态引用',
+    load_knowledge: '读取知识上下文',
+    load_source_snapshot: '读取代码源快照',
+    review_special_contexts: '特殊场景复核',
+    validate_request: '校验请求',
+};
+const traceKeyText = {
+    action: '动作',
+    candidate_count: '候选复核数量',
+    confirmed_count: '确定影响数量',
+    derived_relation_count: '变量传递派生数量',
+    excluded_count: '已排除数量',
+    history_count: '历史记录数量',
+    keywords: '关键词',
+    max_review_items: '复核上限',
+    next_keywords: '后续关键词',
+    overall_confidence: '整体置信度',
+    reason: '原因',
+    reasoning: '判断说明',
+    reviewed_count: '已复核数量',
+    risk_level: '风险等级',
+    search_round: '检索轮次',
+    skipped: '跳过原因',
+    uncertain_count: '不确定数量',
+};
+const actionText = {
+    finish: '结束检索',
+    search_more: '继续检索',
+};
+const coverageKeyText = {
+    confirmed_count: '确定影响数量',
+    derived_relation_count: '变量传递派生数量',
+    excluded_count: '已排除数量',
+    search_roots: '检索范围',
+    search_round: '检索轮次',
+    searched_keywords: '已检索关键词',
+    total_matches: '总命中数',
+    uncertain_count: '不确定数量',
+};
 async function loadHistory() {
     historyLoading.value = true;
     try {
@@ -27,41 +139,98 @@ async function loadHistory() {
         historyLoading.value = false;
     }
 }
-async function handleSubmit() {
+async function handleSubmit(requirement = form.requirement) {
     loading.value = true;
+    streamStatus.value = 'running';
+    progressEvents.value = [];
     errorMessage.value = '';
     clarification.value = null;
+    unsupported.value = null;
+    report.value = null;
+    if (!form.root_path.trim()) {
+        errorMessage.value = '请先填写工程路径';
+        loading.value = false;
+        streamStatus.value = 'idle';
+        return;
+    }
+    if (!requirement.trim()) {
+        errorMessage.value = '请先填写需求描述';
+        loading.value = false;
+        streamStatus.value = 'idle';
+        return;
+    }
     try {
-        const result = await submitAssessment({
-            root_path: form.root_path,
-            repo_path: form.repo_path,
-            requirement: form.requirement,
-            file_types: form.file_types
-                .split(',')
-                .map((item) => item.trim())
-                .filter(Boolean),
+        await streamAssessment({
+            requirement,
+            root_path: form.root_path.trim(),
+            repo_path: form.repo_path.trim() || undefined,
+            change_type: 'field_rename',
+        }, handleStreamEvent);
+    }
+    catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : '分析提交失败';
+        streamStatus.value = 'error';
+    }
+    finally {
+        loading.value = false;
+    }
+}
+async function handleStreamEvent(event) {
+    if (event.event === 'progress') {
+        progressEvents.value.push(event.data);
+        return;
+    }
+    if (event.event === 'heartbeat') {
+        progressEvents.value.push({
+            stage: 'heartbeat',
+            title: '持续分析中',
+            message: event.data.message,
         });
+        return;
+    }
+    if (event.event === 'error') {
+        errorMessage.value = event.data.message;
+        streamStatus.value = 'error';
+        return;
+    }
+    if (event.event === 'done') {
+        streamStatus.value = 'done';
+        return;
+    }
+    if (event.event === 'result') {
+        const result = event.data;
         if ('kind' in result && result.kind === 'clarification') {
             clarification.value = result;
+            report.value = null;
+            return;
+        }
+        if ('kind' in result && result.kind === 'unsupported') {
+            unsupported.value = result;
             report.value = null;
             return;
         }
         report.value = result;
         clarification.value = null;
         selectedHistoryId.value = result.summary.assessment_id ?? null;
-        await loadHistory();
+        void loadHistory();
     }
-    catch (error) {
-        errorMessage.value = error instanceof Error ? error.message : '分析提交失败';
-    }
-    finally {
-        loading.value = false;
-    }
+}
+async function submitClarificationAnswer() {
+    const answer = clarificationAnswer.value.trim();
+    if (!answer)
+        return;
+    const mergedRequirement = `${form.requirement}\n补充信息：${answer}`;
+    form.requirement = mergedRequirement;
+    clarificationAnswer.value = '';
+    await handleSubmit(mergedRequirement);
 }
 async function openHistory(item) {
     selectedHistoryId.value = item.assessment_id;
     errorMessage.value = '';
     clarification.value = null;
+    unsupported.value = null;
+    streamStatus.value = 'idle';
+    progressEvents.value = [];
     try {
         const detail = await fetchHistoryDetail(item.assessment_id);
         report.value = detail.report;
@@ -69,6 +238,81 @@ async function openHistory(item) {
     catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '历史详情加载失败';
     }
+}
+function formatTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime()))
+        return value;
+    return new Intl.DateTimeFormat('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(date);
+}
+function displayFile(item) {
+    return item.relative_path || item.file_path || '-';
+}
+function displayChangeType(value) {
+    return displayMappedText(changeTypeText, value);
+}
+function displayRisk(value) {
+    return displayMappedText(riskText, value);
+}
+function displayConfidence(value) {
+    return displayMappedText(confidenceText, value);
+}
+function displayDecision(value) {
+    return displayMappedText(decisionText, value);
+}
+function displayReason(value) {
+    return displayMappedText(reasonText, value);
+}
+function displaySupportedTypes(values) {
+    return values.map(displayChangeType).join('、');
+}
+function displayCoverageKey(key) {
+    return coverageKeyText[key] ?? key;
+}
+function displayCoverageValue(key, value) {
+    if (Array.isArray(value)) {
+        return value.length ? value.map((item) => String(item)).join('、') : '无';
+    }
+    if (key.endsWith('confidence') && typeof value === 'string')
+        return displayConfidence(value);
+    if (key.endsWith('risk_level') && typeof value === 'string')
+        return displayRisk(value);
+    if (value === undefined || value === null || value === '')
+        return '-';
+    return String(value);
+}
+function displayTrace(item) {
+    const details = Object.entries(item)
+        .filter(([key, value]) => key !== 'node' && value !== undefined && value !== null && value !== '')
+        .map(([key, value]) => `${displayTraceKey(key)}：${displayTraceValue(key, value)}`);
+    const node = item.node ? displayMappedText(traceNodeText, item.node) : '执行记录';
+    return details.length ? `${node}：${details.join('；')}` : node;
+}
+function displayTraceKey(key) {
+    return traceKeyText[key] ?? key;
+}
+function displayTraceValue(key, value) {
+    if (Array.isArray(value))
+        return value.length ? value.map((item) => String(item)).join('、') : '无';
+    if (key === 'action' && typeof value === 'string')
+        return displayMappedText(actionText, value);
+    if (key === 'risk_level' && typeof value === 'string')
+        return displayRisk(value);
+    if (key === 'overall_confidence' && typeof value === 'string')
+        return displayConfidence(value);
+    if (key === 'reason' && typeof value === 'string')
+        return displayReason(value);
+    return String(value);
+}
+function displayMappedText(map, value) {
+    if (!value)
+        return '-';
+    return map[value] ?? value;
 }
 onMounted(async () => {
     await loadHistory();
@@ -79,14 +323,27 @@ let __VLS_components;
 let __VLS_directives;
 /** @type {__VLS_StyleScopedClasses['sidebar-header']} */ ;
 /** @type {__VLS_StyleScopedClasses['history-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['form-panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['primary']} */ ;
+/** @type {__VLS_StyleScopedClasses['match-section']} */ ;
 /** @type {__VLS_StyleScopedClasses['evidence-table']} */ ;
 /** @type {__VLS_StyleScopedClasses['evidence-table']} */ ;
+/** @type {__VLS_StyleScopedClasses['coverage-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['coverage-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['status-pill']} */ ;
+/** @type {__VLS_StyleScopedClasses['status-pill']} */ ;
+/** @type {__VLS_StyleScopedClasses['status-pill']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['active']} */ ;
 /** @type {__VLS_StyleScopedClasses['layout']} */ ;
 /** @type {__VLS_StyleScopedClasses['summary-grid']} */ ;
-/** @type {__VLS_StyleScopedClasses['result-columns']} */ ;
-/** @type {__VLS_StyleScopedClasses['two-columns']} */ ;
 /** @type {__VLS_StyleScopedClasses['form-grid']} */ ;
+/** @type {__VLS_StyleScopedClasses['two-columns']} */ ;
 // CSS variable injection 
 // CSS variable injection end 
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -123,9 +380,9 @@ for (const [item] of __VLS_getVForSourceType((__VLS_ctx.histories))) {
         ...{ class: "history-meta" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.strong, __VLS_intrinsicElements.strong)({});
-    (item.risk_level);
+    (__VLS_ctx.displayRisk(item.risk_level));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-    (item.overall_confidence);
+    (__VLS_ctx.displayConfidence(item.overall_confidence));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "history-requirement" },
     });
@@ -133,7 +390,7 @@ for (const [item] of __VLS_getVForSourceType((__VLS_ctx.histories))) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "history-time" },
     });
-    (item.created_at);
+    (__VLS_ctx.formatTime(item.created_at));
 }
 __VLS_asFunctionalElement(__VLS_intrinsicElements.main, __VLS_intrinsicElements.main)({
     ...{ class: "content" },
@@ -144,9 +401,13 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElemen
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "panel-header" },
 });
+__VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-    ...{ onClick: (__VLS_ctx.handleSubmit) },
+    ...{ onClick: (...[$event]) => {
+            __VLS_ctx.handleSubmit();
+        } },
     ...{ class: "primary" },
     disabled: (__VLS_ctx.loading),
 });
@@ -156,37 +417,67 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.d
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({});
+__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+    placeholder: "\u4f8b\u5982\u0020\u0044\u003a\u005c\u005c\u0057\u0072\u006f\u006b\u005c\u005c\u0070\u0072\u006f\u0064\u0075\u0063\u0074",
+});
 (__VLS_ctx.form.root_path);
 __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({});
-(__VLS_ctx.form.repo_path);
-__VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
-    ...{ class: "full-width" },
+__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+    placeholder: "\u4f8b\u5982\u0020\u0070\u0061\u0063\u006b\u0061\u0067\u0065\u0073\u005c\u005c\u0075\u0070\u0067\u0072\u0061\u0064\u0065\u005f\u0072\u0065\u0061\u0063\u0074\u005c\u005c\u0070\u0061\u0063\u006b\u0061\u0067\u0065\u0073\u005c\u005c\u0072\u0065\u0070\u006f\u005c\u005c\u0073\u0072\u0063",
 });
+(__VLS_ctx.form.repo_path);
+__VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
 __VLS_asFunctionalElement(__VLS_intrinsicElements.textarea)({
     value: (__VLS_ctx.form.requirement),
-    rows: "4",
+    rows: "5",
+    placeholder: "例如：将字段 integrateAmt 改为 totalIntegrateAmt，评估前端影响范围",
 });
-__VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
-    ...{ class: "full-width" },
-});
-__VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-__VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
-    placeholder: ".ts,.tsx,.js",
-});
-(__VLS_ctx.form.file_types);
 if (__VLS_ctx.errorMessage) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
         ...{ class: "panel error-panel" },
     });
     (__VLS_ctx.errorMessage);
 }
+if (__VLS_ctx.progressEvents.length > 0 || __VLS_ctx.streamStatus === 'running') {
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+        ...{ class: "panel progress-panel" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "progress-header" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
+    (__VLS_ctx.streamStatus === 'running' ? '正在实时推进分析流程' : __VLS_ctx.streamStatus === 'error' ? '分析已停止' : '分析流程已结束');
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "status-pill" },
+        ...{ class: (__VLS_ctx.streamStatus) },
+    });
+    (__VLS_ctx.streamStatus === 'running' ? '进行中' : __VLS_ctx.streamStatus === 'error' ? '失败' : __VLS_ctx.streamStatus === 'done' ? '完成' : '待开始');
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.ol, __VLS_intrinsicElements.ol)({
+        ...{ class: "progress-list" },
+    });
+    for (const [item, index] of __VLS_getVForSourceType((__VLS_ctx.progressEvents))) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.li, __VLS_intrinsicElements.li)({
+            key: (`${item.stage}-${index}`),
+            ...{ class: "progress-item" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "progress-dot" },
+            ...{ class: ({ active: index === __VLS_ctx.progressEvents.length - 1 && __VLS_ctx.streamStatus === 'running' }) },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.strong, __VLS_intrinsicElements.strong)({});
+        (item.title);
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
+        (item.message);
+    }
+}
 if (__VLS_ctx.clarification) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "panel" },
+        ...{ class: "panel clarification-panel" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
     __VLS_asFunctionalElement(__VLS_intrinsicElements.ul, __VLS_intrinsicElements.ul)({});
@@ -196,6 +487,28 @@ if (__VLS_ctx.clarification) {
         });
         (question);
     }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.textarea)({
+        value: (__VLS_ctx.clarificationAnswer),
+        rows: "3",
+        placeholder: "在这里补充回答，然后继续分析",
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+        ...{ onClick: (__VLS_ctx.submitClarificationAnswer) },
+        ...{ class: "primary" },
+        disabled: (__VLS_ctx.loading || !__VLS_ctx.clarificationAnswer.trim()),
+    });
+}
+if (__VLS_ctx.unsupported) {
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
+        ...{ class: "panel unsupported-panel" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
+    (__VLS_ctx.unsupported.reason);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.p, __VLS_intrinsicElements.p)({});
+    (__VLS_ctx.displaySupportedTypes(__VLS_ctx.unsupported.current_supported_change_types));
 }
 if (__VLS_ctx.report) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
@@ -208,7 +521,7 @@ if (__VLS_ctx.report) {
         ...{ class: "label" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.strong, __VLS_intrinsicElements.strong)({});
-    (__VLS_ctx.report.summary.change_type);
+    (__VLS_ctx.displayChangeType(__VLS_ctx.report.summary.change_type));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "summary-card" },
     });
@@ -216,7 +529,7 @@ if (__VLS_ctx.report) {
         ...{ class: "label" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.strong, __VLS_intrinsicElements.strong)({});
-    (__VLS_ctx.report.summary.risk_level);
+    (__VLS_ctx.displayRisk(__VLS_ctx.report.summary.risk_level));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "summary-card" },
     });
@@ -224,7 +537,7 @@ if (__VLS_ctx.report) {
         ...{ class: "label" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.strong, __VLS_intrinsicElements.strong)({});
-    (__VLS_ctx.report.summary.overall_confidence);
+    (__VLS_ctx.displayConfidence(__VLS_ctx.report.summary.overall_confidence));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "summary-card" },
     });
@@ -247,20 +560,111 @@ if (__VLS_ctx.report) {
         (__VLS_ctx.report.next_action);
     }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "panel result-columns" },
+        ...{ class: "panel" },
     });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "match-section" },
+    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({});
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({});
-    (JSON.stringify(__VLS_ctx.report.confirmed_affected, null, 2));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
+    if (__VLS_ctx.report.confirmed_affected.length === 0) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "empty" },
+        });
+    }
+    else {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.table, __VLS_intrinsicElements.table)({
+            ...{ class: "evidence-table" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.thead, __VLS_intrinsicElements.thead)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.tr, __VLS_intrinsicElements.tr)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.tbody, __VLS_intrinsicElements.tbody)({});
+        for (const [item] of __VLS_getVForSourceType((__VLS_ctx.report.confirmed_affected))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.tr, __VLS_intrinsicElements.tr)({
+                key: (item.evidence_id || `${item.file_path}-${item.line_no}`),
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayFile(item));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (item.line_no ?? '-');
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayReason(item.reason));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayConfidence(item.confidence));
+        }
+    }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "match-section" },
+    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({});
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({});
-    (JSON.stringify(__VLS_ctx.report.uncertain_matches, null, 2));
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
+    if (__VLS_ctx.report.uncertain.length === 0) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "empty" },
+        });
+    }
+    else {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.table, __VLS_intrinsicElements.table)({
+            ...{ class: "evidence-table" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.thead, __VLS_intrinsicElements.thead)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.tr, __VLS_intrinsicElements.tr)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.tbody, __VLS_intrinsicElements.tbody)({});
+        for (const [item] of __VLS_getVForSourceType((__VLS_ctx.report.uncertain))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.tr, __VLS_intrinsicElements.tr)({
+                key: (item.evidence_id || `${item.file_path}-${item.line_no}`),
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayFile(item));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (item.line_no ?? '-');
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayReason(item.reason));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayConfidence(item.confidence));
+        }
+    }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "match-section" },
+    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({});
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({});
-    (JSON.stringify(__VLS_ctx.report.excluded_matches, null, 2));
+    if (__VLS_ctx.report.excluded.length === 0) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "empty" },
+        });
+    }
+    else {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.table, __VLS_intrinsicElements.table)({
+            ...{ class: "evidence-table" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.thead, __VLS_intrinsicElements.thead)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.tr, __VLS_intrinsicElements.tr)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.th, __VLS_intrinsicElements.th)({});
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.tbody, __VLS_intrinsicElements.tbody)({});
+        for (const [item] of __VLS_getVForSourceType((__VLS_ctx.report.excluded))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.tr, __VLS_intrinsicElements.tr)({
+                key: (item.evidence_id || `${item.file_path}-${item.line_no}`),
+            });
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayFile(item));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (item.line_no ?? '-');
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayReason(item.reason));
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
+            (__VLS_ctx.displayConfidence(item.confidence));
+        }
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
         ...{ class: "panel" },
     });
@@ -286,13 +690,13 @@ if (__VLS_ctx.report) {
                 key: (String(item.evidence_id)),
             });
             __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
-            (item.decision);
+            (__VLS_ctx.displayDecision(String(item.decision ?? '')));
             __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
-            (item.file_path);
+            (__VLS_ctx.displayFile(item));
             __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
             (item.line_no);
             __VLS_asFunctionalElement(__VLS_intrinsicElements.td, __VLS_intrinsicElements.td)({});
-            (item.reason);
+            (__VLS_ctx.displayReason(item.reason));
         }
     }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
@@ -300,25 +704,30 @@ if (__VLS_ctx.report) {
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({});
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({});
-    (JSON.stringify(__VLS_ctx.report.coverage, null, 2));
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.dl, __VLS_intrinsicElements.dl)({
+        ...{ class: "coverage-list" },
+    });
+    for (const [item] of __VLS_getVForSourceType((__VLS_ctx.coverageItems))) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            key: (item.key),
+            ...{ class: "coverage-item" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.dt, __VLS_intrinsicElements.dt)({});
+        (item.label);
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.dd, __VLS_intrinsicElements.dd)({});
+        (item.value);
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({});
     __VLS_asFunctionalElement(__VLS_intrinsicElements.h3, __VLS_intrinsicElements.h3)({});
     __VLS_asFunctionalElement(__VLS_intrinsicElements.ul, __VLS_intrinsicElements.ul)({
         ...{ class: "trace-list" },
     });
-    for (const [item] of __VLS_getVForSourceType((__VLS_ctx.report.trace))) {
+    for (const [item, index] of __VLS_getVForSourceType((__VLS_ctx.report.trace))) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.li, __VLS_intrinsicElements.li)({
-            key: (item),
+            key: (index),
         });
-        (item);
+        (__VLS_ctx.displayTrace(item));
     }
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.section, __VLS_intrinsicElements.section)({
-        ...{ class: "panel" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.h2, __VLS_intrinsicElements.h2)({});
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.pre, __VLS_intrinsicElements.pre)({});
-    (__VLS_ctx.prettyJson);
 }
 /** @type {__VLS_StyleScopedClasses['layout']} */ ;
 /** @type {__VLS_StyleScopedClasses['sidebar']} */ ;
@@ -335,11 +744,20 @@ if (__VLS_ctx.report) {
 /** @type {__VLS_StyleScopedClasses['panel-header']} */ ;
 /** @type {__VLS_StyleScopedClasses['primary']} */ ;
 /** @type {__VLS_StyleScopedClasses['form-grid']} */ ;
-/** @type {__VLS_StyleScopedClasses['full-width']} */ ;
-/** @type {__VLS_StyleScopedClasses['full-width']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['error-panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-header']} */ ;
+/** @type {__VLS_StyleScopedClasses['status-pill']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-list']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-item']} */ ;
+/** @type {__VLS_StyleScopedClasses['progress-dot']} */ ;
+/** @type {__VLS_StyleScopedClasses['panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['clarification-panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['primary']} */ ;
+/** @type {__VLS_StyleScopedClasses['panel']} */ ;
+/** @type {__VLS_StyleScopedClasses['unsupported-panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['summary-grid']} */ ;
 /** @type {__VLS_StyleScopedClasses['summary-card']} */ ;
@@ -352,31 +770,54 @@ if (__VLS_ctx.report) {
 /** @type {__VLS_StyleScopedClasses['label']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
-/** @type {__VLS_StyleScopedClasses['result-columns']} */ ;
+/** @type {__VLS_StyleScopedClasses['match-section']} */ ;
+/** @type {__VLS_StyleScopedClasses['empty']} */ ;
+/** @type {__VLS_StyleScopedClasses['evidence-table']} */ ;
+/** @type {__VLS_StyleScopedClasses['match-section']} */ ;
+/** @type {__VLS_StyleScopedClasses['empty']} */ ;
+/** @type {__VLS_StyleScopedClasses['evidence-table']} */ ;
+/** @type {__VLS_StyleScopedClasses['match-section']} */ ;
+/** @type {__VLS_StyleScopedClasses['empty']} */ ;
+/** @type {__VLS_StyleScopedClasses['evidence-table']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['empty']} */ ;
 /** @type {__VLS_StyleScopedClasses['evidence-table']} */ ;
 /** @type {__VLS_StyleScopedClasses['panel']} */ ;
 /** @type {__VLS_StyleScopedClasses['result-columns']} */ ;
 /** @type {__VLS_StyleScopedClasses['two-columns']} */ ;
+/** @type {__VLS_StyleScopedClasses['coverage-list']} */ ;
+/** @type {__VLS_StyleScopedClasses['coverage-item']} */ ;
 /** @type {__VLS_StyleScopedClasses['trace-list']} */ ;
-/** @type {__VLS_StyleScopedClasses['panel']} */ ;
 var __VLS_dollars;
 const __VLS_self = (await import('vue')).defineComponent({
     setup() {
         return {
             form: form,
+            clarificationAnswer: clarificationAnswer,
             loading: loading,
             historyLoading: historyLoading,
             histories: histories,
             report: report,
             clarification: clarification,
+            unsupported: unsupported,
             selectedHistoryId: selectedHistoryId,
             errorMessage: errorMessage,
+            progressEvents: progressEvents,
+            streamStatus: streamStatus,
             evidenceItems: evidenceItems,
-            prettyJson: prettyJson,
+            coverageItems: coverageItems,
             handleSubmit: handleSubmit,
+            submitClarificationAnswer: submitClarificationAnswer,
             openHistory: openHistory,
+            formatTime: formatTime,
+            displayFile: displayFile,
+            displayChangeType: displayChangeType,
+            displayRisk: displayRisk,
+            displayConfidence: displayConfidence,
+            displayDecision: displayDecision,
+            displayReason: displayReason,
+            displaySupportedTypes: displaySupportedTypes,
+            displayTrace: displayTrace,
         };
     },
 });

@@ -34,6 +34,8 @@ src/impact_agent/policies/risk.py
 src/impact_agent/services/__init__.py
 src/impact_agent/services/assessment_service.py
 src/impact_agent/services/classifier.py
+src/impact_agent/services/context_review.py
+src/impact_agent/services/frontend_search.py
 src/impact_agent/services/intake.py
 src/impact_agent/services/knowledge_store.py
 src/impact_agent/services/relation_tracker.py

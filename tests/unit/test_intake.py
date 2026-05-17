@@ -1,4 +1,4 @@
-from impact_agent.models.llm import ClarificationNeeded, IntakeParseResult
+from impact_agent.models.llm import ClarificationNeeded, IntakeParseResult, UnsupportedRequest
 from impact_agent.models.request import AssessmentRequest
 from impact_agent.services import intake
 from impact_agent.services.intake import intake_and_normalize
@@ -36,7 +36,7 @@ def test_intake_uses_default_file_types() -> None:
     assert ".vue" in request.file_types
 
 
-def test_intake_parses_natural_language_string(monkeypatch) -> None:
+def test_intake_uses_llm_when_local_parser_cannot_extract_fields(monkeypatch) -> None:
     monkeypatch.setattr(
         intake,
         "get_llm",
@@ -56,7 +56,7 @@ def test_intake_parses_natural_language_string(monkeypatch) -> None:
     result = intake_and_normalize(
         {
             "source": {"type": "local", "root_path": "/tmp/project"},
-            "message": "请把订单金额字段从 amount 改成 totalAmount",
+            "message": "请分析订单金额字段变更影响范围",
         }
     )
 
@@ -64,6 +64,44 @@ def test_intake_parses_natural_language_string(monkeypatch) -> None:
     assert result.change_scope.old_name == "amount"
     assert result.change_scope.new_name == "totalAmount"
     assert result.repo_path == "src"
+
+
+def test_intake_parses_field_rename_locally_without_llm(monkeypatch) -> None:
+    monkeypatch.setattr(
+        intake,
+        "get_llm",
+        lambda: (_ for _ in ()).throw(AssertionError("should not call llm")),
+    )
+
+    result = intake_and_normalize(
+        {
+            "source": {"type": "local", "root_path": "/tmp/project"},
+            "requirement": "将订单金额字段从 integrateAmt 改为 totalIntegrateAmt",
+        }
+    )
+
+    assert isinstance(result, AssessmentRequest)
+    assert result.change_scope.old_name == "integrateAmt"
+    assert result.change_scope.new_name == "totalIntegrateAmt"
+
+
+def test_intake_parses_arrow_field_rename_locally(monkeypatch) -> None:
+    monkeypatch.setattr(
+        intake,
+        "get_llm",
+        lambda: (_ for _ in ()).throw(AssertionError("should not call llm")),
+    )
+
+    result = intake_and_normalize(
+        {
+            "source": {"type": "local", "root_path": "/tmp/project"},
+            "requirement": "integrateAmt -> totalIntegrateAmt",
+        }
+    )
+
+    assert isinstance(result, AssessmentRequest)
+    assert result.change_scope.old_name == "integrateAmt"
+    assert result.change_scope.new_name == "totalIntegrateAmt"
 
 
 def test_intake_returns_clarification_for_ambiguous_input(monkeypatch) -> None:
@@ -82,3 +120,28 @@ def test_intake_returns_clarification_for_ambiguous_input(monkeypatch) -> None:
 
     assert isinstance(result, ClarificationNeeded)
     assert result.questions == ["请补充旧字段名", "请补充新字段名"]
+
+
+def test_intake_returns_unsupported_when_llm_classifies_non_field_rename(monkeypatch) -> None:
+    monkeypatch.setattr(
+        intake,
+        "get_llm",
+        lambda: FakeLLM(
+            IntakeParseResult(
+                change_type="feature_change",
+                requirement="新增导出按钮并刷新列表",
+            )
+        ),
+    )
+
+    result = intake_and_normalize(
+        {
+            "source": {"type": "local", "root_path": "/tmp/project"},
+            "requirement": "新增导出按钮并刷新列表",
+            "change_type": "feature_change",
+        }
+    )
+
+    assert isinstance(result, UnsupportedRequest)
+    assert result.supported is False
+    assert "字段变更" in result.reason

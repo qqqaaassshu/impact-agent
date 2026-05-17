@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(D:\\\\Wrok\\\\agents\\\\impact-agent\\\\.venv\\\\Scripts\\\\python.exe *)",
+      "PowerShell(.venv\\\\Scripts\\\\python.exe -m pip install -e .)"
+    ]
+  }
+}

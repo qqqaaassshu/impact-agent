@@ -8,6 +8,12 @@ class ClarificationNeeded(BaseModel):
     questions: list[str] = Field(default_factory=list)
 
 
+class UnsupportedRequest(BaseModel):
+    supported: bool = False
+    reason: str
+    current_supported_change_types: list[str] = Field(default_factory=lambda: ["field_rename"])
+
+
 class IntakeParseResult(BaseModel):
     change_type: ChangeType | None = None
     old_name: str | None = None
@@ -34,3 +40,14 @@ class SearchDecisionResult(BaseModel):
 class SemanticMatchDecision(BaseModel):
     is_affected: bool | None = None
     reason: str | None = None
+
+
+class ContextReviewDecision(BaseModel):
+    evidence_id: str
+    status: str
+    reason: str
+    confidence: str = "medium"
+
+
+class ContextReviewResult(BaseModel):
+    decisions: list[ContextReviewDecision] = Field(default_factory=list)
