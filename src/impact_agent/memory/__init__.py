@@ -1,0 +1,1 @@
+"""Repository-local memory storage."""
