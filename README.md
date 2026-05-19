@@ -26,7 +26,7 @@
 - 风险等级
 - 整体置信度
 
-## 3. 当前交付范围
+## 3. 当前功能范围
 
 当前版本支持：
 
@@ -185,7 +185,7 @@ LLM_API_KEY=your_key_here
 LLM_STRUCTURED_MODE=json
 ```
 
-也可以使用 provider 别名：
+可使用 provider 别名：
 
 ```env
 LLM_PROVIDER=qwen
