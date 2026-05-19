@@ -6,11 +6,11 @@
 
 用户输入本地前端仓库路径和自然语言需求变更描述，系统基于预建代码索引、RAG 检索和 ReAct 工具调用，输出可复核的候选影响范围。
 
-当前 V1 已经不是纯需求文档，已有可运行实现：
+当前 V1 已具备可运行实现：
 
 - FastAPI 后端。
 - Vue 3 + Vite 前端。
-- SQLite 索引元数据和记忆骨架。
+- SQLite 索引元数据和记忆数据结构。
 - Chroma 向量库。
 - Ollama `bge-m3` embedding provider。
 - OpenAI-compatible chat provider，用于 DeepSeek。
@@ -26,7 +26,7 @@
 - React
 - JSON
 
-V1 不做：
+V1 暂不支持：
 
 - 自动改代码。
 - 自动提交 commit。
@@ -52,9 +52,9 @@ V1 不做：
 
 开发规则：
 
-- 不要把业务逻辑堆进 API route。
-- 不要让 orchestrator 直接处理文件系统和数据库细节。
-- 不要让 provider 逻辑散落在业务代码中。
+- API route 应保持轻量，不承载业务逻辑。
+- orchestrator 不应直接处理文件系统和数据库细节。
+- provider 逻辑应集中在 provider adapter 中。
 - Tool 只返回证据，不直接生成最终结论。
 - 记忆只能辅助检索和排序，不能替代当前代码证据。
 - 所有确定结论都必须能追溯到 evidence。

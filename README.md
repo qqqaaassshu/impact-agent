@@ -4,20 +4,20 @@
 
 ## V1 状态
 
-V1 已实现一条可跑通的本地分析链路：
+V1 已实现完整的本地分析链路：
 
 - 前端 WebApp：Vue 3 + Vite。
 - 后端 API：FastAPI。
 - 代码索引：扫描本地前端仓库，提取文件、符号和轻量结构信息。
 - 向量检索：Chroma 存储 chunk content 与 embedding。
-- 元数据存储：SQLite 存储索引状态、文件、chunk 元数据、分析历史和反馈骨架。
+- 元数据存储：SQLite 存储索引状态、文件、chunk 元数据、分析历史和反馈数据结构。
 - Embedding：默认支持 Ollama，本地已按 `bge-m3` 适配。
 - Chat model：OpenAI-compatible provider，当前用于接入 DeepSeek。
 - ReAct：模型按 JSON 决策调用检索工具，多轮查证后生成候选影响清单。
 - 流式过程：`/api/analyze/stream` 会实时输出模型决策、工具调用、命中数量和最终报告。
 - 结果解释：每个候选影响项包含原因、证据位置和命中的代码片段。
 
-当前重点是“分析前帮开发找到可能受影响的位置”，不是自动改代码。
+当前重点是为开发人员在修改代码前提供可复核的候选影响范围，不包含自动代码修改能力。
 
 ## 能力边界
 
@@ -159,7 +159,7 @@ curl -s -N -X POST http://127.0.0.1:8000/api/analyze/stream \
 src/impact_agent/
   api/                  FastAPI routes
   indexer/              文件扫描、过滤、chunk、SQLite、Chroma
-  memory/               分析历史和人工反馈骨架
+  memory/               分析历史和人工反馈数据结构
   models/               Pydantic 数据模型
   orchestrator/         ReAct runner 和状态定义
   providers/            chat / embedding provider adapter
